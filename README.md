@@ -5,7 +5,7 @@ A free, browser-only prototype for crypto trading-level research and standardize
 ## Current MVP
 - Paste a list of Binance USDT-M Futures symbols and price levels.
 - Fetch public Binance Futures candles (1m, 5m, 15m, 1h, 4h) directly from the browser.
-- Rank supplied levels using a transparent heuristic score and a separate 30-minute proximity score.
+- Rank supplied levels using a transparent confluence score across 1m, 5m, 15m, 1h, 4h, 1d and 1w candles.\n- Rule-based pattern proxies for FVG, order blocks, liquidity sweeps, Wyckoff spring/upthrust, swing liquidity and Fibonacci confluence.\n- Show a separate 30-minute volatility-envelope reach score and a retrospective historical touch-rate sample when enough comparable observations exist.
 - Upload a chart screenshot locally, confirm Entry / TP1–TP4 / SL, and generate the requested English setup text.
 - Export a desktop-style PNG and plain-text setup.
 - Store recent activity in browser localStorage only.
