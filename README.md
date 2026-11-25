@@ -26,10 +26,10 @@ SOLUSDT, 180, LONG
 If direction is omitted, the prototype infers LONG when the level is below current price and SHORT when it is above current price.
 
 ## Important limitations
-- The scanner ranks only levels supplied by the user; it does not discover arbitrary chart levels.
+- The scanner ranks only levels supplied by the user; it does not discover arbitrary chart levels.\n- The 30-minute historical touch sample is based on a short recent 1m window and may be unavailable or statistically weak.
 - Scores are heuristic research scores, not calibrated probabilities or guaranteed trade outcomes.
 - The 30-minute score estimates proximity relative to recent volatility. It is not a statistical probability of activation.
-- Screenshot OCR / visual interpretation is not enabled in this no-paid-AI MVP. The screenshot is kept in-browser and placed into a clean desktop-style export after the user confirms all prices manually.
+- Automatic screenshot OCR / visual interpretation is not enabled yet. The screenshot preview is kept in-browser; the current chart export is reconstructed from Binance candle data using the user's manually confirmed prices. It does not claim to have read the screenshot.
 - No orders are placed and no trade is published automatically.
 - Binance public market-data endpoints may be unavailable or rate-limited in some networks/regions.
 
