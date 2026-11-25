@@ -73,8 +73,26 @@
     for(const r of ratios){const price=side==="LONG"?high-range*r:low+range*r;if(Math.abs(price-level)<=tolerance)return {price,ratio:r};}
     return null;
   }
+  function historicalTouchRate(a, level, side, currentDistAtr, currentAtr){
+    const sample=[], candles=a.slice(-240);
+    for(let i=20;i<candles.length-30;i++){
+      const window=candles.slice(Math.max(0,i-13),i+1);
+      const tr=[];
+      for(let j=1;j<window.length;j++)tr.push(Math.max(window[j].h-window[j].l,Math.abs(window[j].h-window[j-1].c),Math.abs(window[j].l-window[j-1].c)));
+      const atr=mean(tr)||currentAtr;
+      const close=candles[i].c;
+      const onExpectedSide=side==="LONG"?close>level:close<level;
+      if(!onExpectedSide)continue;
+      const d=Math.abs(close-level)/Math.max(atr,close*.0001);
+      if(Math.abs(d-currentDistAtr)>.65)continue;
+      const future=candles.slice(i+1,i+31);
+      const touched=future.some(x=>x.l<=level&&x.h>=level);
+      sample.push(touched?1:0);
+    }
+    return {hits:sample.reduce((s,x)=>s+x,0),samples:sample.length,rate:sample.length>=8?Math.round(100*mean(sample)):null};
+  }
   function scoreLevel(item, frames){
-    const s1=stats(frames["1m"]),s5=stats(frames["5m"]),s15=stats(frames["15m"]),s1h=stats(frames["1h"]),s4h=stats(frames["4h"]);
+    const s1=stats(frames["1m"]),s5=stats(frames["5m"]),s15=stats(frames["15m"]),s1h=stats(frames["1h"]),s4h=stats(frames["4h"]),s1d=stats(frames["1d"]),s1w=stats(frames["1w"]);
     const price=s1.close, level=item.level, side=item.side||(level<price?"LONG":"SHORT");
     if(![price,level,s1.atr,s5.atr].every(Number.isFinite)||price<=0||level<=0)throw new Error("Invalid candle or level data.");
     const dist=Math.abs(price-level), atr5=Math.max(s5.atr,price*.0001), distAtr=dist/atr5;
@@ -85,17 +103,21 @@
     const fvg=detectFvg(s15.a,side,level,tolerance)||detectFvg(s1h.a,side,level,tolerance);
     const ob=detectOrderBlock(s15.a,side,s15.atr)||detectOrderBlock(s1h.a,side,s1h.atr);
     const sweep=detectSweep(s5.a,side);
+    const wyckoffSpring=side==="LONG"&&sweep&&s5.volRatio>=1.15;
+    const wyckoffUpthrust=side==="SHORT"&&sweep&&s5.volRatio>=1.15;
+    const wyckoff=wyckoffSpring||wyckoffUpthrust;
     const fib=fibConfluence(s1h.a,side,level,Math.max(s1h.atr*.25,level*.0005));
     const trend=(s,dir)=>dir==="LONG"?s.ema20>s.ema50:s.ema20<s.ema50;
-    const tfs=[s4h,s1h,s15], align=tfs.filter(x=>trend(x,side)).length;
-    const trendScore=align/3*100;
+    const tfs=[s1w,s1d,s4h,s1h,s15], align=tfs.filter(x=>trend(x,side)).length;
+    const trendScore=align/5*100;
     const rsiScore=side==="LONG"?clamp(100-Math.abs(s5.rsi-48)*1.45):clamp(100-Math.abs(s5.rsi-52)*1.45);
     const volumeScore=clamp(s5.volRatio*42);
     const levelScore=clamp(30+touches*7+nearbySwings.length*12-(touches>9?18:0));
-    const structureScore=clamp(30+align*13+(sweep?25:0)+(nearbySwings.length?12:0));
+    const structureScore=clamp(25+align*9+(sweep?20:0)+(wyckoff?15:0)+(nearbySwings.length?12:0));
     const confluenceScore=clamp((fvg?35:0)+(ob?30:0)+(fib?20:0)+(nearbySwings.length?15:0));
     const momentumVolume=clamp(rsiScore*.55+volumeScore*.45);
     const expectedMove30=Math.max(s1.atr*Math.sqrt(30),price*.0007);
+    const historical=historicalTouchRate(s1.a,level,side,distAtr,s1.atr);
     const reachScore=clamp(100*(1-dist/expectedMove30));
     const freshness=clamp(65-touches*3+(nearbySwings.length?15:0)+(sweep?20:0));
     const raw=levelScore*.20+structureScore*.20+momentumVolume*.15+trendScore*.15+confluenceScore*.15+freshness*.05+reachScore*.10;
@@ -105,15 +127,16 @@
     if(fvg)reasons.push(fvg.type+" confluence");
     if(ob)reasons.push(ob.type+" confluence");
     if(sweep)reasons.push(side==="LONG"?"Sell-side liquidity sweep proxy":"Buy-side liquidity sweep proxy");
+    if(wyckoff)reasons.push(side==="LONG"?"Wyckoff spring proxy":"Wyckoff upthrust proxy");
     if(fib)reasons.push("Fibonacci "+(fib.ratio*100).toFixed(1)+"% confluence");
     if(nearbySwings.length)reasons.push("Nearby swing liquidity");
     if(s5.volRatio>=1.5)reasons.push("Elevated 5m volume");
     if(!reasons.length)reasons.push("Limited structural confluence detected");
     const activation= Math.round(reachScore);
     const activationLabel=dist<=expectedMove30?"Within recent 30m volatility envelope":"Beyond recent 30m volatility envelope";
-    return {...item,side,price,score,activation,activationLabel,dist,distPct:dist/price*100,distAtr,touches,volumeRatio:s5.volRatio,rsi:s5.rsi,aligned:align>=2,reasons,
+    return {...item,side,price,score,activation,activationLabel,historicalTouchRate:historical.rate,historicalSamples:historical.samples,historicalHits:historical.hits,dist,distPct:dist/price*100,distAtr,touches,volumeRatio:s5.volRatio,rsi:s5.rsi,aligned:align>=3,reasons,
       components:{level:Math.round(levelScore),structure:Math.round(structureScore),momentumVolume:Math.round(momentumVolume),timeframes:Math.round(trendScore),methodConfluence:Math.round(confluenceScore),freshness:Math.round(freshness),reach:Math.round(reachScore)},
-      patterns:{fvg:!!fvg,orderBlock:!!ob,liquiditySweep:sweep,fibonacci:!!fib,swingLiquidity:nearbySwings.length>0}};
+      patterns:{fvg:!!fvg,orderBlock:!!ob,liquiditySweep:sweep,wyckoffSpring,wyckoffUpthrust,fibonacci:!!fib,swingLiquidity:nearbySwings.length>0}};
   }
   window.TradeDeskAnalysis={scoreLevel};
 })();
