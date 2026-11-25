@@ -98,7 +98,7 @@ async function renderChart(text){
  c.fillStyle='#111f32';c.fillRect(panel.x,panel.y,panel.w,panel.h);c.strokeStyle='#304763';c.strokeRect(panel.x,panel.y,panel.w,panel.h);
  c.fillStyle=val('direction')==='LONG'?'#23c98b':'#ff647c';c.font='bold 26px Arial';c.textAlign='left';c.fillText(val('symbol').toUpperCase().replace(/USDT$/,'')+' '+val('direction'),panel.x+25,panel.y+50);
  c.fillStyle='#eaf2ff';c.font='bold 23px Arial';let yy=panel.y+115;
- const output=text.split('\\n').filter(Boolean).slice(1);
+ const output=text.split('\n').filter(Boolean).slice(1);
  output.forEach(line=>{if(line.startsWith('TP'))c.fillStyle='#23c98b';else if(line.startsWith('SL'))c.fillStyle='#ff647c';else if(line.startsWith('ENTRY'))c.fillStyle='#66a6ff';else c.fillStyle='#eaf2ff';c.fillText(line,panel.x+25,yy);yy+=line.startsWith('RISK')||line.startsWith('INVALID')?52:45;});
  c.fillStyle='#7188a8';c.font='13px Arial';c.fillText('PRICE LEVELS AS CONFIRMED BY USER',panel.x+25,panel.y+panel.h-32);
  lastCanvas=canvas;$('chartOutput').innerHTML='';const img=new Image();img.src=canvas.toDataURL('image/png');img.style.width='100%';$('chartOutput').appendChild(img);
