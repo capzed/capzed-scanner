@@ -148,7 +148,7 @@ async function renderChart(text){
   Object.entries(ocrLevelRows).forEach(([key,row])=>{
    const pixels=c.getImageData(0,Math.max(0,Math.round(row.y)-3),width,Math.min(7,height-Math.max(0,Math.round(row.y)-3))).data;
    let left=width,right=-1,count=0;const scanRight=Math.floor(width*.84),startY=Math.max(0,Math.round(row.y)-3),rows=Math.min(7,height-startY);
-   for(let yy=0;yy<rows;yy++)for(let xx=0;xx<scanRight;xx++){const p=(yy*width+xx)*4,r=pixels[p],g=pixels[p+1],b=pixels[p+2],match=key==='sl'?(r>145&&g<100&&b<130):(r>175&&g>145&&b<135&&r>g*1.08);if(match){left=Math.min(left,xx);right=Math.max(right,xx);count++;}}
+   for(let yy=0;yy<rows;yy++)for(let xx=0;xx<scanRight;xx++){const p=(yy*width+xx)*4,r=pixels[p],g=pixels[p+1],b=pixels[p+2],match=key==='sl'?(r>145&&g<100&&b<130):(r>150&&g>125&&b<190);if(match){left=Math.min(left,xx);right=Math.max(right,xx);count++;}}
    if(count<Math.max(12,width*.025)||right<=left)return;
    const color=key==='sl'?'#ff4058':'#ffe34d';c.save();c.strokeStyle=color;c.globalAlpha=.96;c.lineWidth=Math.max(2,Math.round(width*.0028));c.setLineDash([]);c.beginPath();c.moveTo(left,row.y);c.lineTo(right,row.y);c.stroke();c.restore();
   });
