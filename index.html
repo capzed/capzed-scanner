@@ -116,13 +116,15 @@ $('ocrBtn').onclick=async()=>{
   const result=await worker.recognize(canvas);
   const parsed=readLabeledOcrPrices(result.data);
   let applied=[];
+  const skipped=[];
   Object.entries(parsed.found).forEach(([label,price])=>{
    const id=label==='SL'?'sl':label.toLowerCase();
-   if($(id)){ $(id).value=String(price);applied.push(label+': '+price); }
+   if($(id)&&!$(id).value.trim()){ $(id).value=String(price);applied.push(label+': '+price); }
+   else if($(id))skipped.push(label+' kept existing value');
   });
-  if(parsed.symbol){$('symbol').value=parsed.symbol;applied.push('Symbol: '+parsed.symbol)}
+  if(parsed.symbol){if(!$('symbol').value.trim()||$('symbol').value.trim().toUpperCase()==='ETHUSDT'){$('symbol').value=parsed.symbol;applied.push('Symbol: '+parsed.symbol)}else skipped.push('Symbol kept existing value')}
   if(parsed.timeframe){const option=[...$('chartTf').options].find(o=>o.value===parsed.timeframe);if(option){$('chartTf').value=parsed.timeframe;applied.push('Timeframe: '+parsed.timeframe)}}
-  $('ocrCandidates').textContent=applied.length?'Suggested values (verify each one): '+applied.join(' · '):'No clearly labeled prices were recognized. Please enter the values manually.';
+  $('ocrCandidates').textContent=applied.length?'Suggested values (verify each one): '+applied.join(' · ')+(skipped.length?' · '+skipped.join(', '):''):'No clearly labeled prices were recognized. Please enter the values manually.';
   $('ocrStatus').textContent='OCR finished. Entry and trade direction were not changed. Verify every suggestion against the screenshot.';
   saveHistory('Screenshot OCR',applied.length?applied.join(' · '):'No labeled prices detected');
  }catch(e){
