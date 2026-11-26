@@ -173,6 +173,99 @@
     }
   }
 
+
+  function fmtPrice(value) {
+    return String(value).trim();
+  }
+
+  function generateSetup() {
+    const btn = byId('generateBtn');
+    const error = byId('setupError');
+    const output = byId('signalText');
+    const chart = byId('chartOutput');
+    const download = byId('downloadImageBtn');
+    if (error) error.textContent = '';
+    const get = id => (byId(id)?.value || '').trim();
+    const symbol = get('symbol').toUpperCase().replace(/USDT$/, '');
+    const side = get('direction').toUpperCase();
+    const entry = Number(get('entry'));
+    const sl = Number(get('sl'));
+    const targets = [1,2,3,4,5].map(i => Number(get('tp' + i)));
+    if (!symbol || !get('entry') || !get('sl') || [1,2,3,4,5].some(i => !get('tp' + i))) {
+      if (error) error.textContent = 'Complete the symbol, Entry, TP1–TP5 and Stop Loss before generating.';
+      return;
+    }
+    if (side !== 'LONG' && side !== 'SHORT') {
+      if (error) error.textContent = 'Confirm the direction: LONG or SHORT.';
+      return;
+    }
+    if (![entry,sl,...targets].every(n => Number.isFinite(n) && n > 0)) {
+      if (error) error.textContent = 'All prices must be valid positive numbers.';
+      return;
+    }
+    const ordered = side === 'LONG'
+      ? sl < entry && entry < targets[0] && targets.every((v,i) => i === 0 || targets[i-1] < v)
+      : sl > entry && entry > targets[0] && targets.every((v,i) => i === 0 || targets[i-1] > v);
+    if (!ordered) {
+      if (error) error.textContent = side === 'LONG'
+        ? 'LONG order must be SL < ENTRY < TP1 < TP2 < TP3 < TP4 < TP5.'
+        : 'SHORT order must be SL > ENTRY > TP1 > TP2 > TP3 > TP4 > TP5.';
+      return;
+    }
+    const lines = [
+      symbol + ' ' + side + ' TRADE SETUP', '',
+      'ENTRY: ' + fmtPrice(get('entry')), '',
+      ...targets.flatMap((v,i) => ['TP' + (i+1) + ': ' + fmtPrice(get('tp' + (i+1)))]),
+      '', 'SL: ' + fmtPrice(get('sl')), '', 'RISK 1% OR LESS'
+    ];
+    if (get('invalid')) lines.push('', get('invalid').toUpperCase());
+    const signal = lines.join('\n');
+    if (output) output.textContent = signal;
+
+    const source = selectedImage || window.tdUploadedImage;
+    const canvas = document.createElement('canvas');
+    if (source && (source.naturalWidth || source.width)) {
+      canvas.width = source.naturalWidth || source.width;
+      canvas.height = source.naturalHeight || source.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = side === 'LONG' ? '#23c98b' : '#ff647c';
+      ctx.lineWidth = Math.max(3, Math.round(canvas.width * 0.006));
+      ctx.strokeRect(ctx.lineWidth/2, ctx.lineWidth/2, canvas.width-ctx.lineWidth, canvas.height-ctx.lineWidth);
+    } else {
+      canvas.width = 1600; canvas.height = 900;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#080e18'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = side === 'LONG' ? '#23c98b' : '#ff647c';
+      ctx.font = 'bold 42px Arial'; ctx.fillText(symbol + ' ' + side + ' TRADE SETUP', 70, 95);
+      ctx.fillStyle = '#eaf2ff'; ctx.font = 'bold 30px Arial';
+      signal.split('\n').slice(2).filter(Boolean).forEach((line,i) => ctx.fillText(line, 80, 180 + i*72));
+      ctx.strokeStyle = side === 'LONG' ? '#23c98b' : '#ff647c'; ctx.lineWidth = 8; ctx.strokeRect(4,4,1592,892);
+    }
+    const img = new Image();
+    img.onload = () => {
+      if (chart) { chart.replaceChildren(img); img.style.width='100%'; img.style.height='auto'; img.style.display='block'; }
+    };
+    img.src = canvas.toDataURL('image/png');
+    window.tdGeneratedCanvas = canvas;
+    if (download) download.disabled = false;
+    if (download) download.onclick = () => {
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = (symbol || 'trade') + '_setup.png'; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      }, 'image/png');
+    };
+    try {
+      const items = JSON.parse(localStorage.getItem('td_history') || '[]');
+      items.unshift({type:'Trade setup',summary:symbol+' '+side+' · Entry '+get('entry'),time:new Date().toLocaleString()});
+      localStorage.setItem('td_history', JSON.stringify(items.slice(0,30)));
+    } catch (_) {}
+    setStatus('Setup generated. Check the signal and chart image before using it.');
+  }
+
   function bind() {
     const file = byId('chartFile');
     const read = byId('ocrBtn');
@@ -185,7 +278,7 @@
       }
       showPreview(selected);
     });
-    if (read) read.onclick = readScreenshot;
+    if (read) read.onclick = readScreenshot;\n    const generate = byId('generateBtn');\n    if (generate) generate.onclick = generateSetup;
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once: true });
