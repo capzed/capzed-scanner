@@ -67,6 +67,69 @@ async function analyseLevel(item){
 }
 $('scanBtn').onclick=async()=>{const btn=$('scanBtn'),err=$('scanError');err.textContent='';const parsed=parseLevels($('levels').value);if(!parsed.length){err.textContent='Paste at least one valid level first.';return}const bad=parsed.find(x=>x.error);if(bad){err.textContent=bad.error;return}btn.disabled=true;btn.innerHTML='<span class="loading"></span>Scanning market data…';const start=performance.now();try{const unique=[...new Map(parsed.map(x=>[x.symbol+'_'+x.level,x])).values()];const results=[];for(let i=0;i<unique.length;i+=3){const batch=unique.slice(i,i+3);const done=await Promise.all(batch.map(async x=>{try{return await analyseLevel(x)}catch(e){return {...x,error:e.message}}}));results.push(...done)}const good=results.filter(x=>!x.error).sort((a,b)=>b.score-a.score).slice(0,Number($('maxResults').value));$('scannedCount').textContent=String(results.filter(x=>!x.error).length);$('avgScore').textContent=good.length?Math.round(good.reduce((a,x)=>a+x.score,0)/good.length):'—';$('scanTime').textContent=((performance.now()-start)/1000).toFixed(1)+'s';$('results').innerHTML=good.length?'<div class="tablewrap"><table><thead><tr><th>Pair / Side</th><th>Level</th><th>Score</th><th>30m reach score</th><th>Historical touch</th><th>Distance</th></tr></thead><tbody>'+good.map(x=>'<tr><td><b>'+escapeHtml(x.symbol)+'</b><br><span class="'+x.side.toLowerCase()+'">'+x.side+'</span><br><span class="hint">'+escapeHtml(x.activationLabel)+'</span></td><td>'+x.level+'</td><td class="score">'+x.score+'/100</td><td>'+x.activation+'/100</td><td>'+(x.historicalTouchRate===null?'Insufficient data':x.historicalTouchRate+'% ('+x.historicalSamples+' samples)')+'</td><td>'+x.distPct.toFixed(2)+'%</td></tr><tr><td colspan="6" style="color:#9eb0c8;background:#0a1422">Confluences: '+escapeHtml(x.reasons.join(' · '))+'<br><span class="hint">Components — Level '+x.components.level+' · Structure '+x.components.structure+' · Methods '+x.components.methodConfluence+' · Trend '+x.components.timeframes+'</span></td></tr>').join('')+'</tbody></table></div><div class="hint" style="margin-top:10px">30m reach score is a volatility-envelope heuristic, NOT a probability. Historical touch rate is a retrospective sample of similar distances, not a forward guarantee. ICT/SMC and Wyckoff labels are rule-based proxies.</div>':'No levels could be analysed. Check the symbols and market-data access.';const failed=results.filter(x=>x.error);if(failed.length)err.textContent=failed.length+' level(s) could not be checked: '+failed.map(x=>x.symbol).join(', ');saveHistory('Market scan',good.length+' ranked levels · '+(good[0]?good[0].symbol+' score '+good[0].score:'no valid results'))}catch(e){err.textContent=e.message}finally{btn.disabled=false;btn.textContent='Run multi-timeframe scan'}};
 $('chartFile').onchange=e=>{const f=e.target.files[0];if(!f)return;if(!f.type.startsWith('image/')){$('ocrStatus').textContent='Please select an image file.';return}const url=URL.createObjectURL(f);const im=new Image();im.onload=()=>{uploadedImage=im;$('imagePreview').innerHTML='';$('imagePreview').appendChild(im);$('ocrStatus').textContent='Screenshot loaded locally. Tap Read prices from screenshot to run OCR.';$('ocrCandidates').textContent=''};im.onerror=()=>{$('ocrStatus').textContent='Could not open this image.'};im.src=url};
+
+let ocrWorkerPromise=null;
+async function getOcrWorker(){
+ if(!window.Tesseract){
+  await new Promise((resolve,reject)=>{
+   const script=document.createElement('script');
+   script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+   script.onload=resolve;script.onerror=()=>reject(new Error('Could not load the free OCR engine. Check your internet connection and try again.'));
+   document.head.appendChild(script);
+  });
+ }
+ if(!window.Tesseract)throw new Error('OCR engine did not initialize.');
+ if(!ocrWorkerPromise)ocrWorkerPromise=window.Tesseract.createWorker('eng',1,{logger:m=>{
+  if(m.status==='recognizing text')$('ocrStatus').textContent='Reading screenshot… '+Math.round((m.progress||0)*100)+'%';
+ }});
+ return ocrWorkerPromise;
+}
+function normalizeOcrPrice(s){const v=String(s||'').replace(/,/g,'.').replace(/[^\d.]/g,'');const n=Number(v);return Number.isFinite(n)&&n>0?n:null}
+function readLabeledOcrPrices(data){
+ const found={},words=(data.words||[]).filter(w=>w.text&&w.bbox);
+ const centerY=w=>(w.bbox.y0+w.bbox.y1)/2;
+ const centerX=w=>(w.bbox.x0+w.bbox.x1)/2;
+ const numeric=w=>/^\d[\d.,]*$/.test(w.text.replace(/\s/g,''));
+ for(const labelWord of words){
+  const label=labelWord.text.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!/^TP[1-5]$/.test(label)&&label!=='SL')continue;
+  const candidates=words.filter(w=>w!==labelWord&&numeric(w)&&centerX(w)>centerX(labelWord)&&Math.abs(centerY(w)-centerY(labelWord))<=Math.max(18,(labelWord.bbox.y1-labelWord.bbox.y0)*1.8));
+  candidates.sort((a,b)=>centerX(a)-centerX(b));
+  if(candidates.length){const value=normalizeOcrPrice(candidates[0].text);if(value)found[label]=value}
+ }
+ const text=data.text||'';
+ const sym=text.match(/\b([A-Z0-9]{2,}USDT)(?:\.P)?\b/i);
+ const tf=text.match(/\b(1m|3m|5m|15m|30m|1h|2h|4h|6h|12h|1d|1w)\b/i);
+ return {found,symbol:sym?sym[1].toUpperCase():null,timeframe:tf?tf[1].toLowerCase():null,text};
+}
+$('ocrBtn').onclick=async()=>{
+ const btn=$('ocrBtn');
+ if(!uploadedImage){$('ocrStatus').textContent='Upload a chart screenshot first.';return}
+ btn.disabled=true;$('ocrCandidates').textContent='';
+ try{
+  $('ocrStatus').textContent='Loading free OCR engine…';
+  const worker=await getOcrWorker();
+  const maxWidth=1800,scale=Math.min(2,maxWidth/uploadedImage.width);
+  const canvas=document.createElement('canvas');canvas.width=Math.round(uploadedImage.width*scale);canvas.height=Math.round(uploadedImage.height*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(uploadedImage,0,0,canvas.width,canvas.height);
+  const result=await worker.recognize(canvas);
+  const parsed=readLabeledOcrPrices(result.data);
+  let applied=[];
+  Object.entries(parsed.found).forEach(([label,price])=>{
+   const id=label==='SL'?'sl':label.toLowerCase();
+   if($(id)){ $(id).value=String(price);applied.push(label+': '+price); }
+  });
+  if(parsed.symbol){$('symbol').value=parsed.symbol;applied.push('Symbol: '+parsed.symbol)}
+  if(parsed.timeframe){const option=[...$('chartTf').options].find(o=>o.value===parsed.timeframe);if(option){$('chartTf').value=parsed.timeframe;applied.push('Timeframe: '+parsed.timeframe)}}
+  $('ocrCandidates').textContent=applied.length?'Suggested values (verify each one): '+applied.join(' · '):'No clearly labeled prices were recognized. Please enter the values manually.';
+  $('ocrStatus').textContent='OCR finished. Entry and trade direction were not changed. Verify every suggestion against the screenshot.';
+  saveHistory('Screenshot OCR',applied.length?applied.join(' · '):'No labeled prices detected');
+ }catch(e){
+  $('ocrStatus').textContent=e.message||'OCR failed. You can still enter prices manually.';
+ }finally{btn.disabled=false}
+};
+
 function val(id){return $(id).value.trim()}
 function fmt(x){if(!x)return '';return String(Number(x))}
 function makeText(){const sym=val('symbol').toUpperCase().replace(/USDT$/,'');const dir=val('direction');const entry=val('entry'),sl=val('sl'),tps=[val('tp1'),val('tp2'),val('tp3'),val('tp4'),val('tp5')];if(!sym||!entry||!sl||tps.some(x=>!x))throw new Error('Complete the symbol, your Entry, TP1–TP5 and Stop Loss.');const n=[Number(entry),Number(sl),...tps.map(Number)];if(n.some(x=>!Number.isFinite(x)||x<=0))throw new Error('All trade prices must be valid positive numbers.');if(dir==='SHORT'&&!(Number(sl)>Number(entry)&&Number(entry)>Number(tps[0])&&Number(tps[0])>Number(tps[1])&&Number(tps[1])>Number(tps[2])&&Number(tps[2])>Number(tps[3])&&Number(tps[3])>Number(tps[4])))throw new Error('SHORT prices must follow SL > ENTRY > TP1 > TP2 > TP3 > TP4 > TP5.');if(dir==='LONG'&&!(Number(sl)<Number(entry)&&Number(entry)<Number(tps[0])&&Number(tps[0])<Number(tps[1])&&Number(tps[1])<Number(tps[2])&&Number(tps[2])<Number(tps[3])&&Number(tps[3])<Number(tps[4])))throw new Error('LONG prices must follow SL < ENTRY < TP1 < TP2 < TP3 < TP4 < TP5.');return sym+' '+dir+' TRADE SETUP\n\nENTRY: '+fmt(entry)+'\n\nTP1: '+fmt(tps[0])+'\nTP2: '+fmt(tps[1])+'\nTP3: '+fmt(tps[2])+'\nTP4: '+fmt(tps[3])+'\nTP5: '+fmt(tps[4])+'\n\nSL: '+fmt(sl)+'\nRISK 1% OR LESS'+(val('invalid')?'\n\n'+val('invalid').toUpperCase():'')}
