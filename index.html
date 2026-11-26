@@ -212,28 +212,45 @@ function normalizeOcrPrice(token){
  else if(dot>=0){const tail=v.length-dot-1;if(tail===3)v=v.replace(/\./g,'');}
  const n=Number(v);return Number.isFinite(n)&&n>0?String(n):null;
 }
+function ocrLabelKey(text){
+ const clean=String(text||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ if(/^TP[1-5]$/.test(clean))return clean.toLowerCase();
+ if(clean==='TPS'||clean==='TP5S')return 'tp5';
+ if(/^TP[1-4]A$/.test(clean))return clean.slice(0,3).toLowerCase();
+ if(clean==='SL'||clean==='STOPLOSS')return 'sl';
+ return null;
+}
 function parseOcrWords(words,imageWidth){
- const found={},labels=[['tp1',/^TP\s*1$/i],['tp2',/^TP\s*2$/i],['tp3',/^TP\s*3$/i],['tp4',/^TP\s*4$/i],['tp5',/^TP\s*5$/i],['sl',/^(?:SL|STOPLOSS)$/i]];
- const tokens=(Array.isArray(words)?words:[]).filter(w=>w&&w.bbox&&String(w.text||'').trim()&&(w.confidence===undefined||w.confidence>=20)).map(w=>({text:String(w.text).trim(),x0:w.bbox.x0,x1:w.bbox.x1,y:(w.bbox.y0+w.bbox.y1)/2,h:Math.max(1,w.bbox.y1-w.bbox.y0)})).sort((a,b)=>a.y-b.y||a.x0-b.x0);
+ const found={},tokens=(Array.isArray(words)?words:[]).filter(w=>w&&w.bbox&&String(w.text||'').trim()&&(w.confidence===undefined||w.confidence>=20)).map(w=>({text:String(w.text).trim(),x0:w.bbox.x0,x1:w.bbox.x1,y:(w.bbox.y0+w.bbox.y1)/2,h:Math.max(1,w.bbox.y1-w.bbox.y0),confidence:w.confidence??50})).sort((a,b)=>a.y-b.y||a.x0-b.x0);
+ const used=new Set();
  for(let i=0;i<tokens.length;i++){
-  let key=null,label=tokens[i],labelEnd=i;
-  for(const [k,re] of labels){if(re.test(label.text.replace(/[^A-Z0-9]/gi,''))){key=k;break}}
-  if(!key&&/^TP$/i.test(label.text)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-label.y)<Math.max(label.h,tokens[i+1].h)*.8){key='tp'+tokens[i+1].text;labelEnd=i+1;}
-  if(!key||found[key])continue;
-  const anchor=tokens[labelEnd],tol=Math.max(8,anchor.h*.85),maxGap=(imageWidth||1600)*.42;
-  const right=tokens.filter((w,j)=>j>labelEnd&&w.x0>anchor.x1&&w.x0-anchor.x1<maxGap&&Math.abs(w.y-anchor.y)<tol&&/^[0-9][0-9.,\s]*$/.test(w.text)).sort((a,b)=>a.x0-b.x0);
-  let combined='',last=null,best=null;
-  for(const word of right.slice(0,3)){
-   if(last&&word.x0-last.x1>Math.max(10,anchor.h*.7))break;
-   combined+=word.text;const price=normalizeOcrPrice(combined);if(price)best=price;last=word;
+  let key=ocrLabelKey(tokens[i].text),labelEnd=i;
+  if(!key&&/^TP$/i.test(tokens[i].text)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text.trim())&&Math.abs(tokens[i+1].y-tokens[i].y)<Math.max(tokens[i].h,tokens[i+1].h)*.9){key='tp'+tokens[i+1].text.trim();labelEnd=i+1;}
+  if(!key&&!/^TP[?]$/i.test(tokens[i].text))continue;
+  if(!key||found[key]||used.has(key))continue;
+  const anchor=tokens[labelEnd],tol=Math.max(10,anchor.h*1.35),maxGap=(imageWidth||1600)*.30;
+  // Price labels sit on the chart's right-hand price scale. Depending on the
+  // screenshot layout, the TP tag can be on either side of the printed price.
+  const nearby=tokens.map((w,j)=>({w,j,dist:Math.min(Math.abs(w.x0-anchor.x1),Math.abs(anchor.x0-w.x1))}))
+   .filter(o=>o.j!==i&&o.j!==labelEnd&&o.w.x0!==anchor.x0&&o.dist<maxGap&&Math.abs(o.w.y-anchor.y)<tol&&/^[0-9][0-9.,\s]*$/.test(o.w.text))
+   .sort((a,b)=>Math.abs(a.w.y-anchor.y)-Math.abs(b.w.y-anchor.y)||a.dist-b.dist||b.w.confidence-a.w.confidence);
+  for(const candidate of nearby.slice(0,4)){
+   const w=candidate.w;let combined=w.text,last=w;
+   const fragments=tokens.filter((q,j)=>j!==candidate.j&&j!==i&&j!==labelEnd&&Math.abs(q.y-w.y)<Math.max(5,w.h*.45)&&/^[0-9][0-9.,]*$/.test(q.text)&&Math.abs(q.x0-last.x1)<Math.max(8,w.h*.8)).sort((a,b)=>a.x0-b.x0);
+   for(const frag of fragments.slice(0,2))combined+=frag.text;
+   const price=normalizeOcrPrice(combined)||normalizeOcrPrice(w.text);
+   if(price){found[key]=price;used.add(key);break;}
   }
-  if(best)found[key]=best;
  }
  return found;
 }
 function locateOcrLevelRows(words,preparedWidth,preparedHeight,originalWidth,originalHeight){
  const rows={},tokens=(Array.isArray(words)?words:[]).filter(w=>w&&w.bbox&&String(w.text||'').trim()&&(w.confidence===undefined||w.confidence>=20));
- for(let i=0;i<tokens.length;i++){const clean=String(tokens[i].text).toUpperCase().replace(/[^A-Z0-9]/g,'');let key=/^TP[1-5]$/.test(clean)?clean.toLowerCase():clean==='SL'?'sl':null;if(!key&&clean==='TP'&&tokens[i+1]&&/^[1-5]$/.test(String(tokens[i+1].text).trim()))key='tp'+String(tokens[i+1].text).trim();if(key&&!rows[key])rows[key]={y:((tokens[i].bbox.y0+tokens[i].bbox.y1)/2)/preparedHeight*originalHeight,x:tokens[i].bbox.x0/preparedWidth*originalWidth};}
+ for(let i=0;i<tokens.length;i++){
+  let key=ocrLabelKey(tokens[i].text),label=tokens[i];
+  if(!key&&/^TP$/i.test(tokens[i].text)&&tokens[i+1]&&/^[1-5]$/.test(String(tokens[i+1].text).trim())&&Math.abs(((tokens[i].bbox.y0+tokens[i].bbox.y1)-(tokens[i+1].bbox.y0+tokens[i+1].bbox.y1))/2)<Math.max(tokens[i].bbox.y1-tokens[i].bbox.y0,tokens[i+1].bbox.y1-tokens[i+1].bbox.y0))){key='tp'+String(tokens[i+1].text).trim();}
+  if(key&&!rows[key])rows[key]={y:((label.bbox.y0+label.bbox.y1)/2)/preparedHeight*originalHeight,x:label.bbox.x0/preparedWidth*originalWidth};
+ }
  return rows;
 }
 function parseOcrPrices(text){
