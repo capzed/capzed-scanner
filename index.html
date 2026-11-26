@@ -30,9 +30,9 @@ main{max-width:1180px;margin:26px auto;padding:0 16px 80px}.hero{display:flex;ju
 <div><div class="panel"><h2>02 / Scan results</h2><div class="metrics"><div class="metric"><b id="scannedCount">—</b><span>Levels checked</span></div><div class="metric"><b id="avgScore">—</b><span>Average score</span></div><div class="metric"><b id="scanTime">—</b><span>Scan duration</span></div></div><div id="results" class="hint">Your ranked Top 10 will appear here after the scan.</div><div class="warning">No trade is executed. Always verify the level on your own chart before using it.</div></div></div></div>
 </section>
 <section id="setup" class="section">
-<div class="hero"><div><div class="eyebrow">Chart recognition & publication</div><h1>Setup Studio</h1><div class="sub">Upload your chart screenshot. Local OCR can suggest printed TP/SL labels and nearby prices; verify them, enter your exact Entry, then generate the English setup and desktop-style chart card.</div></div><span class="status">● MANUAL PRICE CONFIRMATION</span></div>
+<div class="hero"><div><div class="eyebrow">Chart recognition & publication</div><h1>Setup Studio</h1><div class="sub">Upload your chart screenshot. The app automatically detects the symbol and LONG/SHORT direction where the chart provides enough evidence, then reads printed TP/SL labels and nearby prices. Enter your exact Entry and verify the extracted values.</div></div><span class="status">● MANUAL PRICE CONFIRMATION</span></div>
 <div class="setup-layout"><div class="panel"><h2>01 / Chart & trade details</h2><div class="field"><label>CHART SCREENSHOT</label><input type="file" id="chartFile" accept="image/*"><div class="hint">Your image stays in this browser session; it is not uploaded. OCR reads printed text and nearby prices, not chart structure or unlabelled levels.</div><button id="ocrBtn" type="button" style="width:100%;margin-top:8px">Read prices from screenshot (free OCR)</button><div id="ocrStatus" class="hint" style="margin-top:8px">OCR runs locally in your browser after loading the free OCR engine.</div><div id="ocrCandidates" class="hint" style="margin-top:6px"></div></div><div id="imagePreview" class="preview">Select a chart screenshot from your phone</div>
-<div class="row"><div class="field"><label>SYMBOL</label><input id="symbol" value="ETHUSDT" placeholder="ETHUSDT"></div><div class="field"><label>DIRECTION</label><select id="direction"><option>SHORT</option><option>LONG</option></select></div><div class="field"><label>CHART TIMEFRAME</label><select id="chartTf"><option>5m</option><option>1m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option></select></div></div>
+<div class="row"><div class="field"><label>SYMBOL</label><input id="symbol" value="" placeholder="Auto-detected from screenshot" autocomplete="off"></div><div class="field"><label>DIRECTION</label><select id="direction"><option value="" selected>Auto-detect from screenshot</option><option value="LONG">LONG</option><option value="SHORT">SHORT</option></select></div><div class="field"><label>CHART TIMEFRAME</label><select id="chartTf"><option>5m</option><option>1m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option></select></div></div>
 <div class="field"><label>ENTRY (YOU PROVIDE WITH THE SCREENSHOT)</label><input id="entry" type="number" step="any" placeholder="Enter your exact entry price" required><div class="hint">The OCR will never guess or overwrite your entry. Enter it yourself for each screenshot.</div></div>
 <div class="row"><div class="field"><label>TP1</label><input id="tp1" type="number" step="any"></div><div class="field"><label>TP2</label><input id="tp2" type="number" step="any"></div></div>
 <div class="row"><div class="field"><label>TP3</label><input id="tp3" type="number" step="any"></div><div class="field"><label>TP4</label><input id="tp4" type="number" step="any"></div></div><div class="field"><label>TP5</label><input id="tp5" type="number" step="any"></div>
@@ -100,7 +100,7 @@ async function analyseLevel(item){
  return window.TradeDeskAnalysis.scoreLevel(item,frames);
 }
 $('scanBtn').onclick=async()=>{const btn=$('scanBtn'),err=$('scanError');err.textContent='';const parsed=parseLevels($('levels').value);if(!parsed.length){err.textContent='Paste at least one valid level first.';return}const bad=parsed.find(x=>x.error);if(bad){err.textContent=bad.error;return}btn.disabled=true;btn.innerHTML='<span class="loading"></span>Scanning market data…';const start=performance.now();try{marketFramesCache.clear();const unique=[...new Map(parsed.map(x=>[x.symbol+'_'+x.level+'_'+(x.timeframe||'na'),x])).values()];const results=[];for(let i=0;i<unique.length;i+=3){const batch=unique.slice(i,i+3);const done=await Promise.all(batch.map(async x=>{try{return await analyseLevel(x)}catch(e){return {...x,error:e.message}}}));results.push(...done)}const good=results.filter(x=>!x.error).sort((a,b)=>b.score-a.score).slice(0,Number($('maxResults').value));$('scannedCount').textContent=String(results.filter(x=>!x.error).length);$('avgScore').textContent=good.length?Math.round(good.reduce((a,x)=>a+x.score,0)/good.length):'—';$('scanTime').textContent=((performance.now()-start)/1000).toFixed(1)+'s';$('results').innerHTML=good.length?'<div class="tablewrap"><table><thead><tr><th>Pair / Side</th><th>Level</th><th>Score</th><th>30m reach score</th><th>Historical touch</th><th>Distance</th></tr></thead><tbody>'+good.map(x=>'<tr><td><b>'+escapeHtml(x.symbol)+'</b><br><span class="'+x.side.toLowerCase()+'">'+x.side+'</span><br><span class="hint">'+escapeHtml(x.activationLabel)+'</span></td><td>'+x.level+'</td><td class="score">'+x.score+'/100</td><td>'+x.activation+'/100</td><td>'+(x.historicalTouchRate===null?'Insufficient data':x.historicalTouchRate+'% ('+x.historicalSamples+' samples)')+'</td><td>'+x.distPct.toFixed(2)+'%</td></tr><tr><td colspan="6" style="color:#9eb0c8;background:#0a1422">Confluences: '+escapeHtml(x.reasons.join(' · '))+'<br><span class="hint">Components — Level '+x.components.level+' · Structure '+x.components.structure+' · Methods '+x.components.methodConfluence+' · Trend '+x.components.timeframes+'</span></td></tr>').join('')+'</tbody></table></div><div class="hint" style="margin-top:10px">30m reach score is a volatility-envelope heuristic, NOT a probability. Historical touch rate is a retrospective sample of similar distances, not a forward guarantee. ICT/SMC and Wyckoff labels are rule-based proxies.</div>':'No levels could be analysed. Check the symbols and market-data access.';const failed=results.filter(x=>x.error);if(failed.length)err.textContent=failed.length+' level(s) could not be checked: '+failed.map(x=>x.symbol).join(', ');saveHistory('Market scan',good.length+' ranked levels · '+(good[0]?good[0].symbol+' score '+good[0].score:'no valid results'))}catch(e){err.textContent=e.message}finally{btn.disabled=false;btn.textContent='Run multi-timeframe scan'}};
-$('chartFile').onchange=e=>{const f=e.target.files[0];if(!f)return;if(!f.type.startsWith('image/')){$('ocrStatus').textContent='Please select an image file.';return}const url=URL.createObjectURL(f);const im=new Image();im.onload=()=>{uploadedImage=im;$('imagePreview').innerHTML='';$('imagePreview').appendChild(im);$('ocrStatus').textContent='Screenshot loaded locally. Tap Read prices from screenshot to run OCR.';$('ocrCandidates').textContent=''};im.onerror=()=>{$('ocrStatus').textContent='Could not open this image.'};im.src=url};
+$('chartFile').onchange=e=>{const f=e.target.files[0];if(!f)return;if(!f.type.startsWith('image/')){$('ocrStatus').textContent='Please select an image file.';return}const url=URL.createObjectURL(f);const im=new Image();im.onload=()=>{uploadedImage=im;ocrLevelRows=[];$('symbol').value='';$('direction').value='';$('chartTf').value='15m';$('imagePreview').innerHTML='';$('imagePreview').appendChild(im);$('ocrStatus').textContent='Screenshot loaded locally. Tap Detect symbol, direction & prices.';$('ocrCandidates').textContent='';};im.onerror=()=>{$('ocrStatus').textContent='Could not open this image.'};im.src=url};
 
 let ocrWorkerPromise=null;
 async function getOcrWorker(){
@@ -136,39 +136,9 @@ function readLabeledOcrPrices(data){
  const tf=text.match(/\b(1m|3m|5m|15m|30m|1h|2h|4h|6h|12h|1d|1w)\b/i);
  return {found,symbol:sym?sym[1].toUpperCase():null,timeframe:tf?tf[1].toLowerCase():null,text};
 }
-$('ocrBtn').onclick=async()=>{
- const btn=$('ocrBtn');
- if(!uploadedImage){$('ocrStatus').textContent='Upload a chart screenshot first.';return}
- btn.disabled=true;$('ocrCandidates').textContent='';
- try{
-  $('ocrStatus').textContent='Loading free OCR engine…';
-  const worker=await getOcrWorker();
-  const maxWidth=1800,scale=Math.min(2,maxWidth/uploadedImage.width);
-  const canvas=document.createElement('canvas');canvas.width=Math.round(uploadedImage.width*scale);canvas.height=Math.round(uploadedImage.height*scale);
-  const ctx=canvas.getContext('2d',{willReadFrequently:true});
-  ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(uploadedImage,0,0,canvas.width,canvas.height);
-  const result=await worker.recognize(canvas);
-  const parsed=readLabeledOcrPrices(result.data);
-  let applied=[];
-  const skipped=[];
-  Object.entries(parsed.found).forEach(([label,price])=>{
-   const id=label==='SL'?'sl':label.toLowerCase();
-   if($(id)&&!$(id).value.trim()){ $(id).value=String(price);applied.push(label+': '+price); }
-   else if($(id))skipped.push(label+' kept existing value');
-  });
-  if(parsed.symbol){if(!$('symbol').value.trim()||$('symbol').value.trim().toUpperCase()==='ETHUSDT'){$('symbol').value=parsed.symbol;applied.push('Symbol: '+parsed.symbol)}else skipped.push('Symbol kept existing value')}
-  if(parsed.timeframe){const option=[...$('chartTf').options].find(o=>o.value===parsed.timeframe);if(option){$('chartTf').value=parsed.timeframe;applied.push('Timeframe: '+parsed.timeframe)}}
-  $('ocrCandidates').textContent=applied.length?'Suggested values (verify each one): '+applied.join(' · ')+(skipped.length?' · '+skipped.join(', '):''):'No clearly labeled prices were recognized. Please enter the values manually.';
-  $('ocrStatus').textContent='OCR finished. Entry and trade direction were not changed. Verify every suggestion against the screenshot.';
-  saveHistory('Screenshot OCR',applied.length?applied.join(' · '):'No labeled prices detected');
- }catch(e){
-  $('ocrStatus').textContent=e.message||'OCR failed. You can still enter prices manually.';
- }finally{btn.disabled=false}
-};
-
 function val(id){return $(id).value.trim()}
 function fmt(x){if(!x)return '';return String(Number(x))}
-function makeText(){const sym=val('symbol').toUpperCase().replace(/USDT$/,'');const dir=val('direction');const entry=val('entry'),sl=val('sl'),tps=[val('tp1'),val('tp2'),val('tp3'),val('tp4'),val('tp5')];if(!sym||!entry||!sl||tps.some(x=>!x))throw new Error('Complete the symbol, your Entry, TP1–TP5 and Stop Loss.');const n=[Number(entry),Number(sl),...tps.map(Number)];if(n.some(x=>!Number.isFinite(x)||x<=0))throw new Error('All trade prices must be valid positive numbers.');if(dir==='SHORT'&&!(Number(sl)>Number(entry)&&Number(entry)>Number(tps[0])&&Number(tps[0])>Number(tps[1])&&Number(tps[1])>Number(tps[2])&&Number(tps[2])>Number(tps[3])&&Number(tps[3])>Number(tps[4])))throw new Error('SHORT prices must follow SL > ENTRY > TP1 > TP2 > TP3 > TP4 > TP5.');if(dir==='LONG'&&!(Number(sl)<Number(entry)&&Number(entry)<Number(tps[0])&&Number(tps[0])<Number(tps[1])&&Number(tps[1])<Number(tps[2])&&Number(tps[2])<Number(tps[3])&&Number(tps[3])<Number(tps[4])))throw new Error('LONG prices must follow SL < ENTRY < TP1 < TP2 < TP3 < TP4 < TP5.');return sym+' '+dir+' TRADE SETUP\n\nENTRY: '+fmt(entry)+'\n\nTP1: '+fmt(tps[0])+'\nTP2: '+fmt(tps[1])+'\nTP3: '+fmt(tps[2])+'\nTP4: '+fmt(tps[3])+'\nTP5: '+fmt(tps[4])+'\n\nSL: '+fmt(sl)+'\nRISK 1% OR LESS'+(val('invalid')?'\n\n'+val('invalid').toUpperCase():'')}
+function makeText(){const sym=val('symbol').toUpperCase().replace(/USDT$/,'');const dir=val('direction');const entry=val('entry'),sl=val('sl'),tps=[val('tp1'),val('tp2'),val('tp3'),val('tp4'),val('tp5')];if(!sym||!entry||!sl||tps.some(x=>!x))throw new Error('Complete the detected symbol, your Entry, TP1–TP5 and Stop Loss.');if(dir!=='LONG'&&dir!=='SHORT')throw new Error('Direction was not detected confidently. Confirm LONG or SHORT from your chart.');const n=[Number(entry),Number(sl),...tps.map(Number)];if(n.some(x=>!Number.isFinite(x)||x<=0))throw new Error('All trade prices must be valid positive numbers.');if(dir==='SHORT'&&!(Number(sl)>Number(entry)&&Number(entry)>Number(tps[0])&&Number(tps[0])>Number(tps[1])&&Number(tps[1])>Number(tps[2])&&Number(tps[2])>Number(tps[3])&&Number(tps[3])>Number(tps[4])))throw new Error('SHORT prices must follow SL > ENTRY > TP1 > TP2 > TP3 > TP4 > TP5.');if(dir==='LONG'&&!(Number(sl)<Number(entry)&&Number(entry)<Number(tps[0])&&Number(tps[0])<Number(tps[1])&&Number(tps[1])<Number(tps[2])&&Number(tps[2])<Number(tps[3])&&Number(tps[3])<Number(tps[4])))throw new Error('LONG prices must follow SL < ENTRY < TP1 < TP2 < TP3 < TP4 < TP5.');return sym+' '+dir+' TRADE SETUP\n\nENTRY: '+fmt(entry)+'\n\nTP1: '+fmt(tps[0])+'\nTP2: '+fmt(tps[1])+'\nTP3: '+fmt(tps[2])+'\nTP4: '+fmt(tps[3])+'\nTP5: '+fmt(tps[4])+'\n\nSL: '+fmt(sl)+'\nRISK 1% OR LESS'+(val('invalid')?'\n\n'+val('invalid').toUpperCase():'')}
 $('generateBtn').onclick=async()=>{const er=$('setupError');er.textContent='';$('generateBtn').disabled=true;$('generateBtn').textContent='Generating…';try{const text=makeText();$('signalText').textContent=text;await renderChart(text);saveHistory('Trade setup',text.split('\\n')[0]+' · Entry '+val('entry'));$('downloadImageBtn').disabled=false}catch(e){er.textContent=e.message}finally{$('generateBtn').disabled=false;$('generateBtn').textContent='Generate setup & chart image'}};
 async function renderChart(text){
  // When a screenshot is supplied, preserve its exact pixel dimensions and full layout.
@@ -267,13 +237,72 @@ function locateOcrLevelRows(words,preparedWidth,preparedHeight,originalWidth,ori
  return rows;
 }
 function parseOcrPrices(text){
- const lines=String(text||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
- const found={},labels=[['tp1',/\bTP\s*1\b/i],['tp2',/\bTP\s*2\b/i],['tp3',/\bTP\s*3\b/i],['tp4',/\bTP\s*4\b/i],['tp5',/\bTP\s*5\b/i],['sl',/\b(?:STOP\s*LOSS|STOPLOSS|SL)\b/i]];
+ const raw=String(text||''),lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),found={};
+ const labels=[['tp1',/\bTP\s*1\b/i],['tp2',/\bTP\s*2\b/i],['tp3',/\bTP\s*3\b/i],['tp4',/\bTP\s*4\b/i],['tp5',/\bTP\s*5\b/i],['sl',/\b(?:STOP\s*LOSS|STOPLOSS|SL)\b/i]];
  const numberFrom=line=>{const tail=String(line||'').replace(/\b(?:ENTRY|ENTR|ENT|TP\s*[1-5]|STOP\s*LOSS|STOPLOSS|SL)\b/ig,' ');const matches=tail.match(/\d[\d\s.,]*\d|\d+/g)||[];for(const token of matches){const n=normalizeOcrPrice(token);if(n)return n}return null};
- for(let i=0;i<lines.length;i++){for(const [key,re] of labels){if(found[key]!==undefined||!re.test(lines[i]))continue;let value=numberFrom(lines[i].replace(re,' '));if(!value){for(let j=i+1;j<Math.min(lines.length,i+3);j++){value=numberFrom(lines[j]);if(value)break;if(labels.some(([,other])=>other.test(lines[j])))break;}}if(value)found[key]=value;}}
- const symbol=String(text||'').match(/\b([A-Z0-9]{2,15})\s*[/_-]?\s*USDT\b/i);if(symbol)found.symbol=symbol[1].toUpperCase()+'USDT';return found;
+ for(let i=0;i<lines.length;i++)for(const [key,re] of labels){if(found[key]!==undefined||!re.test(lines[i]))continue;let value=numberFrom(lines[i].replace(re,' '));if(!value){for(let j=i+1;j<Math.min(lines.length,i+3);j++){value=numberFrom(lines[j]);if(value)break;if(labels.some(([,other])=>other.test(lines[j])))break;}}if(value)found[key]=value;}
+ const normalized=raw.toUpperCase().replace(/\s+/g,' ');
+ const sym=normalized.match(/\b([A-Z0-9]{2,15})\s*(?:[\/_-]\s*)?USDT(?:\s*\.?\s*P)?\b/);
+ if(sym)found.symbol=sym[1].toUpperCase()+'USDT';
+ const tf=normalized.match(/\b(1M|3M|5M|15M|30M|1H|2H|4H|6H|12H|1D|1W)\b/);
+ if(tf)found.timeframe=tf[1].toLowerCase();
+ return found;
 }
-$('ocrBtn').onclick=async()=>{if(!uploadedImage){$('ocrStatus').textContent='Upload a chart screenshot first.';return}const btn=$('ocrBtn');btn.disabled=true;btn.textContent='Reading screenshot…';$('ocrStatus').textContent='Loading OCR engine…';$('ocrCandidates').textContent='';let worker;try{const T=await loadOcrLibrary();worker=await T.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')$('ocrStatus').textContent='Reading screenshot: '+Math.round((m.progress||0)*100)+'%'}});const prepared=preprocessOcrImage(uploadedImage);const result=await worker.recognize(prepared);const raw=result.data.text||'';const textValues=parseOcrPrices(raw);const wordValues=parseOcrWords(result.data.words,prepared.width);const values={...textValues,...wordValues};const originalWidth=uploadedImage.naturalWidth||uploadedImage.width,originalHeight=uploadedImage.naturalHeight||uploadedImage.height;ocrLevelRows=locateOcrLevelRows(result.data.words,prepared.width,prepared.height,originalWidth,originalHeight);for(const key of ['symbol','tp1','tp2','tp3','tp4','tp5','sl'])if(values[key]&&!$(key).value.trim())$(key).value=values[key];const side=raw.match(/\b(LONG|SHORT)\b/i);if(side&&!$('direction').value)$('direction').value=side[1].toUpperCase();const labelsFound=['tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>values[k]!==undefined);const conf=Number(result.data.confidence);const confidence=Number.isFinite(conf)?' · OCR confidence '+Math.round(conf)+'%':'';const caution=Number.isFinite(conf)&&conf<55?' Confidence is low: treat every suggestion as potentially incorrect.':' Verify every value against the chart.';$('ocrStatus').textContent=labelsFound.length?'OCR finished. '+labelsFound.length+' labelled price(s) suggested'+confidence+'.'+caution:'OCR finished, but no clearly labelled TP/SL prices were found'+confidence+'. Enter them manually.';$('ocrCandidates').textContent=raw.trim()?('Recognized text (check carefully):\n'+raw.trim().slice(0,1800)):'No readable text found.'}catch(e){$('ocrStatus').textContent=e.message||'OCR failed. You can still enter prices manually.'}finally{if(worker)try{await worker.terminate()}catch(e){}btn.disabled=false;btn.textContent='Read prices from screenshot (free OCR)'}};
+function inferScreenshotDirection(raw,values,rows){
+ const text=String(raw||'').toUpperCase();
+ const hasLong=/\bLONG\b/.test(text),hasShort=/\bSHORT\b/.test(text);
+ if(hasLong!==hasShort)return {side:hasLong?'LONG':'SHORT',reason:'explicit LONG/SHORT label'};
+ const targets=['tp1','tp2','tp3','tp4','tp5'].map(k=>Number(values[k])).filter(x=>Number.isFinite(x)&&x>0);
+ if(targets.length>=2){
+  const up=targets.every((x,i)=>i===0||x>targets[i-1]);
+  const down=targets.every((x,i)=>i===0||x<targets[i-1]);
+  if(up!==down)return {side:up?'LONG':'SHORT',reason:'TP price sequence'};
+ }
+ const sl=Number(values.sl);
+ if(targets.length&&Number.isFinite(sl)&&sl>0){
+  const avg=targets.reduce((a,b)=>a+b,0)/targets.length;
+  if(avg!==sl)return {side:avg>sl?'LONG':'SHORT',reason:'TP/SL price relationship'};
+ }
+ if(rows&&rows.sl){
+  const tpRows=['tp1','tp2','tp3','tp4','tp5'].map(k=>rows[k]?.y).filter(Number.isFinite);
+  if(tpRows.length){const avg=tpRows.reduce((a,b)=>a+b,0)/tpRows.length;if(Math.abs(avg-rows.sl.y)>4)return {side:avg<rows.sl.y?'LONG':'SHORT',reason:'TP/SL chart positions'};}
+ }
+ return {side:null,reason:'not enough visual evidence'};
+}
+$('ocrBtn').onclick=async()=>{
+ if(!uploadedImage){$('ocrStatus').textContent='Upload a chart screenshot first.';return}
+ const btn=$('ocrBtn');btn.disabled=true;btn.textContent='Reading screenshot…';$('ocrStatus').textContent='Loading free OCR engine…';$('ocrCandidates').textContent='';
+ let worker;
+ try{
+  const T=await loadOcrLibrary();
+  worker=await T.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')$('ocrStatus').textContent='Reading screenshot… '+Math.round((m.progress||0)*100)+'%'}});
+  const prepared=preprocessOcrImage(uploadedImage),result=await worker.recognize(prepared),raw=result.data.text||'';
+  const values={...parseOcrPrices(raw),...parseOcrWords(result.data.words,prepared.width)};
+  const width=uploadedImage.naturalWidth||uploadedImage.width,height=uploadedImage.naturalHeight||uploadedImage.height;
+  ocrLevelRows=locateOcrLevelRows(result.data.words,prepared.width,prepared.height,width,height);
+  const applied=[],skipped=[];
+  if(values.symbol){$('symbol').value=values.symbol;applied.push('Symbol: '+values.symbol)}else skipped.push('Symbol not clearly recognized');
+  if(values.timeframe){const option=[...$('chartTf').options].find(o=>o.value===values.timeframe);if(option){$('chartTf').value=values.timeframe;applied.push('Timeframe: '+values.timeframe)}}
+  for(const key of ['tp1','tp2','tp3','tp4','tp5','sl']){
+   if(values[key]!==undefined&&values[key]!==null){
+    if(!$(key).value.trim()){$(key).value=String(values[key]);applied.push(key.toUpperCase()+': '+values[key])}
+    else skipped.push(key.toUpperCase()+' kept existing manual value');
+   }
+  }
+  const direction=inferScreenshotDirection(raw,values,ocrLevelRows);
+  if(direction.side){$('direction').value=direction.side;applied.push('Direction: '+direction.side+' (detected from '+direction.reason+')')}
+  else skipped.push('Direction could not be determined confidently; select LONG or SHORT after checking the chart');
+  const conf=Number(result.data.confidence),confidence=Number.isFinite(conf)?' OCR confidence: '+Math.round(conf)+'%.':'';
+  $('ocrStatus').textContent='Screenshot analysis complete.'+confidence+' Verify the detected symbol, direction and every extracted price.';
+  $('ocrCandidates').textContent=(applied.length?'Detected: '+applied.join(' · '):'No reliable fields detected.')+(skipped.length?'\nNeeds attention: '+skipped.join(' · '):'')+(raw.trim()?'\n\nRecognized text:\n'+raw.trim().slice(0,1400):'\nNo readable text found.');
+  saveHistory('Screenshot OCR',applied.join(' · ')||'No reliable fields detected');
+ }catch(e){
+  $('ocrStatus').textContent='OCR error: '+(e.message||'Could not read the screenshot. Check your internet connection and retry.');
+ }finally{
+  if(worker)try{await worker.terminate()}catch(e){}
+  btn.disabled=false;btn.textContent='Detect symbol, direction & prices';
+ }
+};
 $('copyBtn').onclick=()=>{const t=$('signalText').textContent;if(t&&t!=='Your exact trade setup will appear here.')navigator.clipboard.writeText(t).then(()=>$('copyBtn').textContent='Copied')};
 $('downloadTextBtn').onclick=()=>{const t=$('signalText').textContent;if(!t||t==='Your exact trade setup will appear here.')return;download(new Blob([t],{type:'text/plain'}),(val('symbol')||'trade')+'_setup.txt')};
 $('downloadImageBtn').onclick=()=>{if(!lastCanvas)return;lastCanvas.toBlob(b=>download(b,(val('symbol')||'trade')+'_setup.png'))};
