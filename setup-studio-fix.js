@@ -278,7 +278,9 @@
       }
       showPreview(selected);
     });
-    if (read) read.onclick = readScreenshot;\n    const generate = byId('generateBtn');\n    if (generate) generate.onclick = generateSetup;
+    if (read) read.onclick = readScreenshot;
+    const generate = byId('generateBtn');
+    if (generate) generate.onclick = generateSetup;
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once: true });
