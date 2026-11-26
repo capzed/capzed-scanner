@@ -130,8 +130,13 @@ function parseOcrWords(words,imageWidth){
   if(!key&&/^TP$/i.test(label.text)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-label.y)<Math.max(label.h,tokens[i+1].h)*.8){key='tp'+tokens[i+1].text;labelEnd=i+1;}
   if(!key||found[key])continue;
   const anchor=tokens[labelEnd],tol=Math.max(8,anchor.h*.85),maxGap=(imageWidth||1600)*.42;
-  const right=tokens.filter((w,j)=>j>labelEnd&&w.x0>anchor.x1&&w.x0-anchor.x1<maxGap&&Math.abs(w.y-anchor.y)<tol&&/^[0-9][0-9.,]*$/.test(w.text)).sort((a,b)=>a.x0-b.x0);
-  for(let n=1;n<=Math.min(3,right.length);n++){const price=normalizeOcrPrice(right.slice(0,n).map(w=>w.text).join(''));if(price){found[key]=price;break}}
+  const right=tokens.filter((w,j)=>j>labelEnd&&w.x0>anchor.x1&&w.x0-anchor.x1<maxGap&&Math.abs(w.y-anchor.y)<tol&&/^[0-9][0-9.,\\s]*$/.test(w.text)).sort((a,b)=>a.x0-b.x0);
+  let combined='',last=null,best=null;
+  for(const word of right.slice(0,3)){
+   if(last&&word.x0-last.x1>Math.max(10,anchor.h*.7))break;
+   combined+=word.text;const price=normalizeOcrPrice(combined);if(price)best=price;last=word;
+  }
+  if(best)found[key]=best;
  }
  return found;
 }
