@@ -114,9 +114,10 @@ function preprocessOcrImage(image){
  ctx.putImageData(frame,0,0);return canvas;
 }
 function parseOcrPrices(text){
- const lines=String(text||'').replace(/,/g,'.').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const lines=String(text||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
  const found={};const labels=[['tp1',/\bTP\s*1\b/i],['tp2',/\bTP\s*2\b/i],['tp3',/\bTP\s*3\b/i],['tp4',/\bTP\s*4\b/i],['tp5',/\bTP\s*5\b/i],['sl',/\b(?:STOP\s*LOSS|STOPLOSS|SL)\b/i]];
- const numberFrom=line=>{const tail=String(line||'').replace(/\b(?:ENTRY|ENTR|ENT|TP\s*[1-5]|STOP\s*LOSS|STOPLOSS|SL)\b/ig,' ');const matches=tail.match(/-?\d+(?:\.\d+)?/g)||[];for(const token of matches){const n=Number(token);if(Number.isFinite(n)&&n>0)return String(n)}return null};
+ const normalizePrice=token=>{let v=String(token||'').replace(/\s+/g,'').replace(/[^0-9.,-]/g,'');if(!v)return null;const comma=v.lastIndexOf(','),dot=v.lastIndexOf('.');if(comma>=0&&dot>=0){const decimal=comma>dot?',':'.';v=decimal===','?v.replace(/\./g,'').replace(',','.'):v.replace(/,/g,'');}else if(comma>=0){const tail=v.length-comma-1;v=tail>0&&tail<=2?v.replace(',','.'):v.replace(/,/g,'');}else if(dot>=0){const tail=v.length-dot-1;if(tail===3)v=v.replace(/\./g,'');}const n=Number(v);return Number.isFinite(n)&&n>0?String(n):null};
+ const numberFrom=line=>{const tail=String(line||'').replace(/\b(?:ENTRY|ENTR|ENT|TP\s*[1-5]|STOP\s*LOSS|STOPLOSS|SL)\b/ig,' ');const matches=tail.match(/\d[\d\s.,]*\d|\d+/g)||[];for(const token of matches){const n=normalizePrice(token);if(n)return n}return null};
  for(let i=0;i<lines.length;i++){for(const [key,re] of labels){if(found[key]!==undefined||!re.test(lines[i]))continue;let value=numberFrom(lines[i].replace(re,' '));if(!value){for(let j=i+1;j<Math.min(lines.length,i+3);j++){value=numberFrom(lines[j]);if(value)break;if(labels.some(([,other])=>other.test(lines[j])))break;}}if(value)found[key]=value;}}
  const symbol=String(text||'').match(/\b([A-Z0-9]{2,15})\s*[/_-]?\s*USDT\b/i);if(symbol)found.symbol=symbol[1].toUpperCase()+'USDT';return found;
 }
