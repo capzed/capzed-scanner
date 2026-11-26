@@ -224,8 +224,8 @@ async function renderChart(text){
  c.fillStyle='#7188a8';c.font='13px Arial';c.fillText('PRICE LEVELS AS CONFIRMED BY USER',panel.x+25,panel.y+panel.h-32);
  lastCanvas=canvas;$('chartOutput').innerHTML='';const img=new Image();img.src=canvas.toDataURL('image/png');img.style.width='100%';$('chartOutput').appendChild(img);
 }
-let ocrWorkerPromise=null;
-function loadOcrLibrary(){if(window.Tesseract)return Promise.resolve(window.Tesseract);if(ocrWorkerPromise)return ocrWorkerPromise;ocrWorkerPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';script.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR library did not initialize.'));script.onerror=()=>reject(new Error('Could not load the free OCR library. Check your internet connection and retry.'));document.head.appendChild(script)});return ocrWorkerPromise}
+let ocrLegacyWorkerPromise=null;
+function loadOcrLibrary(){if(window.Tesseract)return Promise.resolve(window.Tesseract);if(ocrLegacyWorkerPromise)return ocrLegacyWorkerPromise;ocrLegacyWorkerPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';script.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR library did not initialize.'));script.onerror=()=>reject(new Error('Could not load the free OCR library. Check your internet connection and retry.'));document.head.appendChild(script)});return ocrLegacyWorkerPromise}
 function preprocessOcrImage(image){
  const scale=Math.min(2.2,Math.max(1,1800/Math.max(image.naturalWidth||image.width,image.naturalHeight||image.height)));
  const canvas=document.createElement('canvas');canvas.width=Math.round((image.naturalWidth||image.width)*scale);canvas.height=Math.round((image.naturalHeight||image.height)*scale);
