@@ -5,7 +5,9 @@ A free, browser-only prototype for crypto trading-level research and standardize
 ## Current MVP
 - Paste a list of Binance USDT-M Futures symbols and price levels.
 - Fetch public Binance Futures candles (1m, 5m, 15m, 1h, 4h) directly from the browser.
-- Rank supplied levels using a transparent confluence score across 1m, 5m, 15m, 1h, 4h, 1d and 1w candles.\n- Rule-based pattern proxies for FVG, order blocks, liquidity sweeps, Wyckoff spring/upthrust, swing liquidity and Fibonacci confluence.\n- Show a separate 30-minute volatility-envelope reach score and a retrospective historical touch-rate sample when enough comparable observations exist.
+- Rank supplied levels using a transparent confluence score across 1m, 5m, 15m, 1h, 4h, 1d and 1w candles.
+- Rule-based pattern proxies for FVG, order blocks, liquidity sweeps, Wyckoff spring/upthrust, swing liquidity and Fibonacci confluence.
+- Show a separate 30-minute volatility-envelope reach score and a retrospective historical touch-rate sample when enough comparable observations exist.
 - Run local browser OCR on a supplied screenshot to suggest clearly labelled Entry / TP1–TP4 / SL prices; verify all extracted values manually before generating the English setup text.
 - Export a desktop-style PNG and plain-text setup.
 - Store recent activity in browser localStorage only.
@@ -26,7 +28,8 @@ SOLUSDT, 180, LONG
 If direction is omitted, the prototype infers LONG when the level is below current price and SHORT when it is above current price.
 
 ## Important limitations
-- The scanner ranks only levels supplied by the user; it does not discover arbitrary chart levels.\n- The 30-minute historical touch sample is based on a short recent 1m window and may be unavailable or statistically weak.
+- The scanner ranks only levels supplied by the user; it does not discover arbitrary chart levels.
+- The 30-minute historical touch sample is based on a short recent 1m window and may be unavailable or statistically weak.
 - Scores are heuristic research scores, not calibrated probabilities or guaranteed trade outcomes.
 - The 30-minute score estimates proximity relative to recent volatility. It is not a statistical probability of activation.
 - Screenshot OCR uses the free Tesseract.js library loaded from jsDelivr on demand. The screenshot is processed in the browser and is not uploaded by this app. OCR may misread decimals, labels, or axis values; it only suggests prices next to recognizable labels. It is not full chart understanding, and all values must be checked manually. First use requires internet access to load the OCR library and language data.
