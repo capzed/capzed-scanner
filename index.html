@@ -325,4 +325,16 @@ $('downloadTextBtn').onclick=()=>{const t=$('signalText').textContent;if(!t||t==
 $('downloadImageBtn').onclick=()=>{if(!lastCanvas)return;lastCanvas.toBlob(b=>download(b,(val('symbol')||'trade')+'_setup.png'))};
 function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
-</script></body></html>
+</script>
+<script>
+// Independent tab navigation fallback: keeps sections switchable even if an optional app module fails.
+document.addEventListener('click',function(event){
+ const button=event.target.closest('nav button[data-tab]');
+ if(!button)return;
+ const target=button.getAttribute('data-tab');
+ document.querySelectorAll('nav button[data-tab]').forEach(function(item){item.classList.toggle('active',item===button)});
+ document.querySelectorAll('.section').forEach(function(section){section.classList.toggle('active',section.id===target)});
+ if(target==='history'&&typeof renderHistory==='function')renderHistory();
+});
+</script>
+</body></html>
