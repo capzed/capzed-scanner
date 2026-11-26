@@ -8,7 +8,7 @@ A free, browser-only prototype for crypto trading-level research and standardize
 - Rank supplied levels using a transparent confluence score across 1m, 5m, 15m, 1h, 4h, 1d and 1w candles.
 - Rule-based pattern proxies for FVG, order blocks, liquidity sweeps, Wyckoff spring/upthrust, swing liquidity and Fibonacci confluence.
 - Show a separate 30-minute volatility-envelope reach score and a retrospective historical touch-rate sample when enough comparable observations exist.
-- Run local browser OCR on a supplied screenshot to suggest clearly labelled Entry / TP1–TP4 / SL prices; verify all extracted values manually before generating the English setup text.
+- Run local browser OCR on a supplied screenshot to suggest the symbol, direction when printed, TP1–TP5 and SL; the user enters the exact Entry price manually for each screenshot. Verify every suggestion before generating the English setup text.
 - Export a desktop-style PNG and plain-text setup.
 - Store recent activity in browser localStorage only.
 - Installable PWA shell; no backend, API key, paid model, database, or subscription.
@@ -32,7 +32,7 @@ If direction is omitted, the prototype infers LONG when the level is below curre
 - The 30-minute historical touch sample is based on a short recent 1m window and may be unavailable or statistically weak.
 - Scores are heuristic research scores, not calibrated probabilities or guaranteed trade outcomes.
 - The 30-minute score estimates proximity relative to recent volatility. It is not a statistical probability of activation.
-- Screenshot OCR uses the free Tesseract.js library loaded from jsDelivr on demand. The screenshot is processed in the browser and is not uploaded by this app. OCR preprocesses the image with grayscale/contrast enhancement and can read a price on the same line or immediately below a recognized label. It may still misread decimals, labels, or axis values; it only suggests prices near recognizable labels. It is not full chart understanding, and all values must be checked manually. First use requires internet access to load the OCR library and language data.
+- Screenshot OCR uses the free Tesseract.js library loaded from jsDelivr on demand. The screenshot is processed in the browser and is not uploaded by this app. OCR preprocesses the image with grayscale/contrast enhancement, supports common decimal/thousands formats (for example 1 683,00 and 1,683.00), and can read a price on the same line or immediately below a recognized label. It may still misread decimals, labels, or axis values; it only suggests prices near recognizable labels. It is not full chart understanding, and all values must be checked manually. First use requires internet access to load the OCR library and language data.
 - The current chart export is reconstructed from Binance candle data using the user's manually confirmed prices; it is not a direct edit of the uploaded screenshot.
 - No orders are placed and no trade is published automatically.
 - Binance public market-data endpoints may be unavailable or rate-limited in some networks/regions.
