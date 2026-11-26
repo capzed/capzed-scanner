@@ -9,7 +9,7 @@ A free, browser-only prototype for crypto trading-level research and standardize
 - Rule-based pattern proxies for FVG, order blocks, liquidity sweeps, Wyckoff spring/upthrust, swing liquidity and Fibonacci confluence.
 - Show a separate 30-minute volatility-envelope reach score and a retrospective historical touch-rate sample when enough comparable observations exist.
 - Run local browser OCR on a supplied screenshot to suggest the symbol, direction when printed, TP1–TP5 and SL; the user enters the exact Entry price manually for each screenshot. Verify every suggestion before generating the English setup text.
-- Export a desktop-style PNG and plain-text setup.
+- Export the exact English trade-signal text in the agreed format and a PNG based on the uploaded screenshot. When a screenshot is present, the image export preserves its native pixel dimensions and full layout (no crop, stretch, or synthetic chart replacement), adding only a thin LONG/SHORT color border. Without a screenshot, it falls back to a reconstructed desktop-style Binance chart.
 - Store recent activity in browser localStorage only.
 - Installable PWA shell; no backend, API key, paid model, database, or subscription.
 
