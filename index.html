@@ -265,7 +265,7 @@ function parseOcrPrices(text){
  if(tf)found.timeframe=tf[1].toLowerCase();
  return found;
 }
-function inferScreenshotDirection(raw,values,rows,manualEntry){
+function inferScreenshotDirection(raw,values,rows){
  const text=String(raw||'').toUpperCase();
  const hasLong=/\bLONG\b/.test(text),hasShort=/\bSHORT\b/.test(text);
  if(hasLong!==hasShort)return {side:hasLong?'LONG':'SHORT',reason:'explicit LONG/SHORT label'};
@@ -284,12 +284,6 @@ function inferScreenshotDirection(raw,values,rows,manualEntry){
   const tpRows=['tp1','tp2','tp3','tp4','tp5'].map(k=>rows[k]?.y).filter(Number.isFinite);
   if(tpRows.length){const avg=tpRows.reduce((a,b)=>a+b,0)/tpRows.length;if(Math.abs(avg-rows.sl.y)>4)return {side:avg<rows.sl.y?'LONG':'SHORT',reason:'TP/SL chart positions'};}
  }
- // The user supplies Entry manually. When a clearly printed SL is available,
- // its position relative to Entry is a reliable direction check for standard setups.
- const entry=Number(manualEntry);
- if(Number.isFinite(entry)&&entry>0&&Number.isFinite(sl)&&sl>0&&entry!==sl){
-  return {side:sl<entry?'LONG':'SHORT',reason:'manual Entry / detected Stop Loss relationship'};
- }
  return {side:null,reason:'not enough visual evidence'};
 }
 $('ocrBtn').onclick=async()=>{
@@ -299,20 +293,10 @@ $('ocrBtn').onclick=async()=>{
  try{
   const T=await loadOcrLibrary();
   worker=await T.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')$('ocrStatus').textContent='Reading screenshot… '+Math.round((m.progress||0)*100)+'%'}});
-  const prepared=preprocessOcrImage(uploadedImage),result=await worker.recognize(prepared);
-  // Run a second local OCR pass on the right-hand price scale, where TP/SL
-  // tags and their printed prices are usually larger and less cluttered.
-  const rightX=Math.floor(prepared.width*.55),rightCanvas=document.createElement('canvas');
-  rightCanvas.width=prepared.width-rightX;rightCanvas.height=prepared.height;
-  rightCanvas.getContext('2d').drawImage(prepared,rightX,0,rightCanvas.width,rightCanvas.height);
-  let rightResult=null;
-  try{rightResult=await worker.recognize(rightCanvas)}catch(e){}
-  const raw=[result.data.text||'',rightResult?.data?.text||''].filter(Boolean).join('\\n');
-  const rightWords=(rightResult?.data?.words||[]).map(w=>({...w,bbox:{...w.bbox,x0:w.bbox.x0+rightX,x1:w.bbox.x1+rightX}}));
-  const allWords=[...(result.data.words||[]),...rightWords];
-  const values={...parseOcrPrices(raw),...parseOcrWords(allWords,prepared.width)};
+  const prepared=preprocessOcrImage(uploadedImage),result=await worker.recognize(prepared),raw=result.data.text||'';
+  const values={...parseOcrPrices(raw),...parseOcrWords(result.data.words,prepared.width)};
   const width=uploadedImage.naturalWidth||uploadedImage.width,height=uploadedImage.naturalHeight||uploadedImage.height;
-  ocrLevelRows=locateOcrLevelRows(allWords,prepared.width,prepared.height,width,height);
+  ocrLevelRows=locateOcrLevelRows(result.data.words,prepared.width,prepared.height,width,height);
   const applied=[],skipped=[];
   if(values.symbol){$('symbol').value=values.symbol;applied.push('Symbol: '+values.symbol)}else skipped.push('Symbol not clearly recognized');
   if(values.timeframe){const option=[...$('chartTf').options].find(o=>o.value===values.timeframe);if(option){$('chartTf').value=values.timeframe;applied.push('Timeframe: '+values.timeframe)}}
@@ -322,7 +306,7 @@ $('ocrBtn').onclick=async()=>{
     else skipped.push(key.toUpperCase()+' kept existing manual value');
    }
   }
-  const direction=inferScreenshotDirection(raw,values,ocrLevelRows,$('entry').value);
+  const direction=inferScreenshotDirection(raw,values,ocrLevelRows);
   if(direction.side){$('direction').value=direction.side;applied.push('Direction: '+direction.side+' (detected from '+direction.reason+')')}
   else skipped.push('Direction could not be determined confidently; select LONG or SHORT after checking the chart');
   const conf=Number(result.data.confidence),confidence=Number.isFinite(conf)?' OCR confidence: '+Math.round(conf)+'%.':'';
