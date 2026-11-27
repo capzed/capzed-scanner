@@ -32,7 +32,7 @@ main{max-width:1180px;margin:26px auto;padding:0 16px 80px}.hero{display:flex;ju
 <section id="setup" class="section">
 <div class="hero"><div><div class="eyebrow">Chart recognition & publication</div><h1>Setup Studio</h1><div class="sub">Upload one chart screenshot and enter only your exact Entry. TRADEDESK automatically reads the symbol, direction, 2 to 5 TP levels and Stop Loss, then prepares the signal and chart image.</div></div><span class="status">● SCREENSHOT + ENTRY ONLY</span></div>
 <div class="setup-layout"><div class="panel"><h2>01 / Chart & trade details</h2><div class="field"><label>CHART SCREENSHOT</label><input type="file" id="chartFile" accept="image/*"><div class="hint">Your image stays in this browser session. TRADEDESK starts recognition automatically after you select it.</div><div id="ocrStatus" class="hint" style="margin-top:8px">Waiting for screenshot…</div><div id="ocrCandidates" class="hint" style="margin-top:6px"></div></div><div id="imagePreview" class="preview">Select a chart screenshot from your phone</div>
-<div class="row"><div class="field"><label>DETECTED SYMBOL</label><input id="symbol" value="" placeholder="Waiting for screenshot…" readonly></div><div class="field"><label>DETECTED DIRECTION</label><input id="directionDisplay" value="" placeholder="Waiting for analysis…" readonly><select id="direction" class="hidden"><option value=""></option><option value="LONG">LONG</option><option value="SHORT">SHORT</option></select></div><select id="chartTf" class="hidden"><option>5m</option><option>1m</option><option selected>15m</option><option>1h</option><option>4h</option><option>1d</option></select></div>
+<div class="row"><div class="field"><label>DETECTED SYMBOL</label><input id="symbol" value="" placeholder="Waiting for screenshot…" readonly></div><div class="field"><label>DIRECTION (AUTO-DETECTED · MANUAL FALLBACK)</label><select id="direction"><option value="">Waiting for recognition…</option><option value="LONG">LONG</option><option value="SHORT">SHORT</option></select></div><select id="chartTf" class="hidden"><option>5m</option><option>1m</option><option>15m</option><option>1h</option><option>4h</option><option>1d</option></select></div>
 <div class="field"><label>ENTRY (YOU PROVIDE WITH THE SCREENSHOT)</label><input id="entry" type="number" step="any" placeholder="Enter your exact entry price" required><div class="hint">This is the only price you enter. The OCR will never guess or overwrite it. Once recognition is complete, the setup is generated automatically.</div></div>
 <div class="hidden"><input id="tp1"><input id="tp2"><input id="tp3"><input id="tp4"><input id="tp5"><input id="sl"><input id="invalid"></div><div id="autoLevels" class="hint">Between 2 and 5 TP levels and the Stop Loss are read from the screenshot. Missing targets are not required or invented.</div>
 <button class="primary" id="generateBtn" style="width:100%">Generate setup & chart image</button><div id="setupError" class="error"></div></div>
@@ -347,7 +347,7 @@ function download(blob,name){const a=document.createElement('a');a.href=URL.crea
  if('caches' in window)caches.keys().then(function(keys){keys.filter(function(k){return k.indexOf('tradedesk-')===0;}).forEach(function(k){caches.delete(k);});}).catch(function(){});
 })();
 </script>
-<script src="./setup-studio-fix.js?v=20261127v6"></script>
+<script src="./setup-studio-fix.js?v=20261127v7"></script>
 <script>
 /* Hard override: prevent the legacy inline generator from taking the Generate click. */
 (function(){
