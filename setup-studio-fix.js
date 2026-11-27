@@ -57,24 +57,25 @@
     return workerPromise;
   }
   function fallbackWords(words){
-    const found={},tokens=(words||[]).filter(w=>w&&w.bbox&&w.text).map(w=>({
+    const found={},labelRows={},tokens=(words||[]).filter(w=>w&&w.bbox&&w.text).map((w,j)=>({
       text:String(w.text).trim().toUpperCase().replace(/[^A-Z0-9.,]/g,''),
       x0:w.bbox.x0,x1:w.bbox.x1,y:(w.bbox.y0+w.bbox.y1)/2,
-      h:Math.max(1,w.bbox.y1-w.bbox.y0),confidence:w.confidence||50
+      h:Math.max(1,w.bbox.y1-w.bbox.y0),confidence:w.confidence||50,j
     })).sort((a,b)=>a.y-b.y||a.x0-b.x0);
     const used=new Set();
     for(let i=0;i<tokens.length;i++){
-      let m=tokens[i].text.match(/^TP([1-5])(?:A)?$/),key=m?'tp'+m[1]:tokens[i].text==='SL'||tokens[i].text==='STOPLOSS'?'sl':null;
-      let end=i;
-      if(!key&&tokens[i].text==='TP'&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-tokens[i].y)<tokens[i].h){key='tp'+tokens[i+1].text;end=i+1;}
-      if(!key||found[key])continue;
-      const a=tokens[end],tol=Math.max(12,a.h*1.6);
-      const candidates=tokens.map((w,j)=>({w,j,d:Math.min(Math.abs(w.x0-a.x1),Math.abs(a.x0-w.x1))}))
-        .filter(o=>o.j!==i&&o.j!==end&&!used.has(o.j)&&/^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-a.y)<tol&&o.d<Math.max(140,a.h*12))
-        .sort((x,y)=>Math.abs(x.w.y-a.y)-Math.abs(y.w.y-a.y)||x.d-y.d||y.w.confidence-x.w.confidence);
-      if(candidates.length){const c=candidates[0],v=price(c.w.text);if(v){found[key]=v;used.add(c.j);}}
+      const t=tokens[i];let m=t.text.match(/^(?:TP|T[PPI])([1-5])$/),key=m?'tp'+m[1]:/^(?:SL|STOP|STOPLOSS|STOPL)$/.test(t.text)?'sl':null,end=i;
+      if(!key&&/^(?:TP|T[PPI])$/.test(t.text)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-t.y)<Math.max(t.h,tokens[i+1].h)*1.8){key='tp'+tokens[i+1].text;end=i+1;}
+      if(!key)continue;
+      const label=tokens[end],tol=Math.max(18,label.h*2.2);
+      labelRows[key]={y:label.y,x0:t.x0,x1:label.x1};
+      if(found[key])continue;
+      const candidates=tokens.map(w=>({w,d:Math.min(Math.abs(w.x0-label.x1),Math.abs(label.x0-w.x1))}))
+        .filter(o=>!used.has(o.w.j)&&o.w.j!==t.j&&o.w.j!==label.j&&/^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-label.y)<tol&&o.d<Math.max(260,label.h*22))
+        .sort((x,y)=>Math.abs(x.w.y-label.y)-Math.abs(y.w.y-label.y)||x.d-y.d||y.w.confidence-x.w.confidence);
+      if(candidates.length){const c=candidates[0],v=price(c.w.text);if(v){found[key]=v;used.add(c.w.j);}}
     }
-    return found;
+    return Object.assign(found,{_labelRows:labelRows});
   }
   function extract(raw,data,prepared){
     const text=String(raw||''),upper=text.toUpperCase();
@@ -82,7 +83,10 @@
     try{if(typeof window.parseOcrPrices==='function')values=window.parseOcrPrices(text)||{};}catch(_){}
     let wordValues={};
     try{if(typeof window.parseOcrWords==='function')wordValues=window.parseOcrWords(data.words,prepared.width)||{};}catch(_){}
-    Object.assign(values,wordValues,fallbackWords(data.words));
+    const fallback=fallbackWords(data.words);
+    const labelRows=fallback._labelRows||{};delete fallback._labelRows;
+    Object.assign(values,wordValues,fallback);
+    values._labelRows=labelRows;
     const symbol=upper.match(/\b([A-Z0-9]{2,15})\s*(?:[\/_-]\s*)?USDT(?:\s*\.?\s*P)?\b/)||
       upper.match(/\b(BTC|ETH|XLM|XRP|SOL|ADA|BNB|DOGE|LTC|BCH|SUI|AVAX|LINK|DOT|TRX)\b/);
     if(symbol)values.symbol=symbol[1].toUpperCase()+'USDT';
@@ -134,14 +138,19 @@
           const e=Number($('entry').value),s=Number($('sl').value);
           if(e>0&&s>0&&e!==s){side=s<e?'LONG':'SHORT';reason='Stop Loss relative to Entry';}
         }
-        if(!side&&values.sl&&rows.sl){
-          const y=rows.sl.y,ys=['tp1','tp2','tp3','tp4','tp5'].map(k=>rows[k]?.y).filter(Number.isFinite);
-          if(ys.length){const avg=ys.reduce((a,b)=>a+b,0)/ys.length;if(Math.abs(avg-y)>4){side=avg<y?'LONG':'SHORT';reason='TP/SL chart positions';}}
+        if(!side){
+          const map=values._labelRows||{};
+          const slY=map.sl?.y??rows.sl?.y;
+          const tpYs=['tp1','tp2','tp3','tp4','tp5'].map(k=>map[k]?.y??rows[k]?.y).filter(Number.isFinite);
+          if(Number.isFinite(slY)&&tpYs.length){
+            const avg=tpYs.reduce((a,b)=>a+b,0)/tpYs.length;
+            if(Math.abs(avg-slY)>4){side=avg<slY?'LONG':'SHORT';reason='TP labels above/below SL on chart';}
+          }
         }
         showDirection(side);
         ocrReady=true;
-        const missingFields=['symbol','direction',...['tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>!$(k).value)];
-        const detected=['symbol','tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>k==='symbol'?!!$('symbol').value:!!$(k).value).map(k=>k.toUpperCase()+': '+(k==='symbol'?$('symbol').value:$(k).value));
+        const missingFields=[...(!$('symbol').value?['symbol']:[]),...(!$('direction').value?['direction']:[]),...['tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>!$(k).value)];
+        const detected=['symbol','direction','tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>$(k).value).map(k=>k.toUpperCase()+': '+$(k).value);
         const notice=$('autoLevels');
         if(notice)notice.textContent=(detected.length?'Detected automatically — '+detected.join(' · '):'No reliable trade levels detected.')+(missingFields.length?'\nStill missing: '+missingFields.join(', ').toUpperCase()+'. The app will not invent missing values.':'');
         status(missingFields.length?'Recognition finished, but some chart labels are unreadable. No signal was fabricated.':'Recognition complete. Enter your exact Entry to generate the setup.');
