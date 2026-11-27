@@ -233,10 +233,10 @@
       if(last&&y-last.end<=Math.max(6,Math.round(h*.006))){last.end=y;last.center=(last.start+last.end)/2;}
       else clusters.push({start:y,end:y,center:y});
     }
-    // Bound the number of OCR passes: coloured candles/lines can create many rows.
-    // The first 18 rows are enough for TP1-TP5, SL and nearby chart annotations.
+    // Scan more candidate bands: chart candles and horizontal lines can precede
+    // the actual TP/SL tags in the right-hand price scale.
     const found={};
-    for(const cluster of clusters.slice(0,18)){
+    for(const cluster of clusters.slice(0,36)){
       const band=Math.max(44,Math.round(h*.06));
       const y0=Math.max(0,Math.round(cluster.center-band/2)),y1=Math.min(h,y0+band);
       const sx=Math.floor(w*.38),sw=w-sx;
@@ -267,10 +267,13 @@
       const labels=[];
       for(let i=0;i<words.length;i++){
         const raw=words[i].text;
-        let key=(raw.match(/^TP([1-5])$/)||[])[1];
-        key=key?'tp'+key:(/^(SL|5L|S1|STOPLOSS|STOP)$/.test(raw)?'sl':null);
+        // Recover common OCR confusions in coloured tags: TPZ -> TP2,
+        // TPI -> TP1, and TP S -> TP5. Keep the accepted range strictly 1–5.
+        const normalized=raw.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/Z/g,'2').replace(/S/g,'5');
+        let key=(normalized.match(/^TP([1-5])$/)||[])[1];
+        key=key?'tp'+key:(/^(SL|5L|S1|STOPLOSS|STOP)$/.test(normalized)?'sl':null);
         const skip=new Set([i]);
-        if(!key&&raw==='TP'&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5){
+        if(!key&&(raw==='TP'||normalized==='TP')&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5){
           key='tp'+words[i+1].text;skip.add(i+1);
         }
         if(key&&(kind==='yellow'?key.startsWith('tp'):key==='sl'))labels.push({key,word:words[i],skip});
