@@ -119,16 +119,35 @@
     const w=source.naturalWidth||source.width,h=source.naturalHeight||source.height;
     const out=document.createElement('canvas');out.width=w;out.height=h;
     const ctx=out.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0,w,h);
-    const frame=ctx.getImageData(0,0,w,h),p=frame.data;
-    for(let i=0;i<p.length;i+=4){
-      const r=p[i]/255,g=p[i+1]/255,b=p[i+2]/255;
-      const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
-      let hue=0;if(d){if(max===r)hue=60*(((g-b)/d)%6);else if(max===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
-      if(hue<0)hue+=360;
-      const sat=max===0?0:d/max;
-      const yellow=hue>=32&&hue<=78&&sat>.22&&max>.28;
-      const red=(hue<=16||hue>=344)&&sat>.25&&max>.25;
-      const keep=kind==='yellow'?yellow:red;
+    const frame=ctx.getImageData(0,0,w,h),p=frame.data,activeRows=new Uint8Array(h);
+    // First locate rows containing the coloured TP (yellow) or SL (red) tag.
+    // The printed price beside the tag is often white, so a colour-only mask
+    // destroys the very number we need to read.
+    for(let y=0;y<h;y++){
+      let hits=0;
+      for(let x=0;x<w;x++){
+        const i=(y*w+x)*4,r=p[i]/255,g=p[i+1]/255,b=p[i+2]/255;
+        const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
+        let hue=0;if(d){if(max===r)hue=60*(((g-b)/d)%6);else if(max===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
+        if(hue<0)hue+=360;
+        const sat=max===0?0:d/max;
+        const match=kind==='yellow'?(hue>=32&&hue<=78&&sat>.22&&max>.28):((hue<=16||hue>=344)&&sat>.25&&max>.25);
+        if(match&&++hits>=2)break;
+      }
+      if(hits>=2)activeRows[y]=1;
+    }
+    // Expand the detected tag row vertically to include anti-aliased glyphs.
+    const band=Math.max(5,Math.round(h*.006));
+    const keepRows=new Uint8Array(h);
+    for(let y=0;y<h;y++)if(activeRows[y])for(let yy=Math.max(0,y-band);yy<=Math.min(h-1,y+band);yy++)keepRows[yy]=1;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      const i=(y*w+x)*4,r=p[i]/255,g=p[i+1]/255,b=p[i+2]/255;
+      const max=Math.max(r,g,b),min=Math.min(r,g,b),lum=.299*r+.587*g+.114*b;
+      const d=max-min,sat=max===0?0:d/max;
+      const coloured=kind==='yellow'?(lum>.28&&r>g*.82&&g>b*1.12&&sat>.16):(lum>.22&&r>g*1.2&&r>b*1.08&&sat>.18);
+      // Keep both the coloured tag and neutral bright price digits on the same row.
+      const textPixel=keepRows[y]&&(lum>.34||lum<.20)&&!(sat>.38&&lum<.34);
+      const keep=coloured||textPixel;
       const v=keep?0:255;p[i]=p[i+1]=p[i+2]=v;p[i+3]=255;
     }
     ctx.putImageData(frame,0,0);
