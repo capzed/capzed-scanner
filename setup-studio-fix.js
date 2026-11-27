@@ -1,115 +1,211 @@
-/* TradeDesk Setup Studio: single, isolated event controller. */
+/* TradeDesk Setup Studio — screenshot + Entry only workflow. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let image = null, workerPromise = null, canvas = null;
+  let image=null, workerPromise=null, canvas=null, rows={}, ocrReady=false, busy=false;
 
-  function status(message, error=false) {
-    const el=$('ocrStatus'); if(el){el.textContent=message;el.style.color=error?'#ff9cab':'';}
+  function status(message,error=false){
+    const el=$('ocrStatus');
+    if(el){el.textContent=message;el.style.color=error?'#ff9cab':'';}
   }
-  function preview(file) {
-    if(!file) return;
-    if(file.type && !file.type.startsWith('image/')) { status('Please select an image file.',true); return; }
+  function showDirection(side){
+    const hidden=$('direction'),display=$('directionDisplay');
+    if(hidden)hidden.value=side||'';
+    if(display)display.value=side||'Not confidently detected';
+  }
+  function price(s){
+    let v=String(s||'').replace(/\s/g,'').replace(/[^0-9.,]/g,'');
+    if(v.includes(',')&&v.includes('.'))v=v.lastIndexOf(',')>v.lastIndexOf('.')?v.replace(/\./g,'').replace(',','.'):v.replace(/,/g,'');
+    else if(v.includes(',')){const n=v.length-v.lastIndexOf(',')-1;v=n<=2?v.replace(',','.'):v.replace(/,/g,'');}
+    else if(v.includes('.')){const n=v.length-v.lastIndexOf('.')-1;if(n===3)v=v.replace(/\./g,'');}
+    const n=Number(v);return Number.isFinite(n)&&n>0?String(n):'';
+  }
+  function preview(file){
+    if(!file)return;
+    if(file.type&&!file.type.startsWith('image/')){status('Please select a chart image.',true);return;}
     const reader=new FileReader();
-    reader.onerror=()=>status('Could not read this image. Please choose a JPG or PNG screenshot.',true);
+    reader.onerror=()=>status('Could not read this image. Try a JPG or PNG screenshot.',true);
     reader.onload=()=>{
       const img=new Image();
       img.onload=()=>{
-        image=img; window.tdUploadedImage=img;
+        image=img;window.tdUploadedImage=img;rows={};canvas=null;ocrReady=false;
         const box=$('imagePreview');
         if(box){box.replaceChildren(img);img.style.cssText='display:block;max-width:100%;max-height:360px;width:auto;height:auto;object-fit:contain;margin:auto';}
-        status('Screenshot loaded and preview ready. Tap READ to extract the printed prices.');
-        if($('ocrCandidates')) $('ocrCandidates').textContent='';
+        $('symbol').value='';showDirection('');
+        ['tp1','tp2','tp3','tp4','tp5','sl'].forEach(id=>$(id).value='');
+        $('signalText').textContent='Analysing screenshot…';
+        $('chartOutput').textContent='Chart image will appear after automatic recognition and Entry.';
+        $('downloadImageBtn').disabled=true;
+        status('Screenshot loaded. Automatic recognition started…');
+        analyse();
       };
-      img.onerror=()=>status('The selected image could not be opened. Try a JPG or PNG screenshot.',true);
+      img.onerror=()=>status('This image could not be opened. Try a JPG or PNG screenshot.',true);
       img.src=reader.result;
     };
     reader.readAsDataURL(file);
   }
   function loadOCR(){
-    if(workerPromise) return workerPromise;
+    if(workerPromise)return workerPromise;
     workerPromise=new Promise((resolve,reject)=>{
-      if(window.Tesseract) return resolve(window.Tesseract);
+      if(window.Tesseract)return resolve(window.Tesseract);
       const s=document.createElement('script');
       s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
       s.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR engine did not initialize.'));
-      s.onerror=()=>reject(new Error('Could not load OCR. Check your internet connection and retry.'));
+      s.onerror=()=>reject(new Error('Could not load the free OCR engine. Check your internet connection.'));
       document.head.appendChild(s);
-    }).then(T=>T.createWorker('eng',1,{logger:m=>{
-      if(m.status==='recognizing text')status('READ is working… '+Math.round((m.progress||0)*100)+'%');
-    }}));
+    });
     return workerPromise;
   }
-  function cleanPrice(s){
-    let v=String(s||'').replace(/\s/g,'').replace(/[^0-9.,]/g,'');
-    if(v.includes(',')&&v.includes('.')) v=v.lastIndexOf(',')>v.lastIndexOf('.')?v.replace(/\./g,'').replace(',','.'):v.replace(/,/g,'');
-    else if(v.includes(',')){const n=v.length-v.lastIndexOf(',')-1;v=n<=2?v.replace(',','.'):v.replace(/,/g,'');}
-    const n=Number(v);return Number.isFinite(n)&&n>0?String(n):'';
+  function fallbackWords(words){
+    const found={},tokens=(words||[]).filter(w=>w&&w.bbox&&w.text).map(w=>({
+      text:String(w.text).trim().toUpperCase().replace(/[^A-Z0-9.,]/g,''),
+      x0:w.bbox.x0,x1:w.bbox.x1,y:(w.bbox.y0+w.bbox.y1)/2,
+      h:Math.max(1,w.bbox.y1-w.bbox.y0),confidence:w.confidence||50
+    })).sort((a,b)=>a.y-b.y||a.x0-b.x0);
+    const used=new Set();
+    for(let i=0;i<tokens.length;i++){
+      let m=tokens[i].text.match(/^TP([1-5])(?:A)?$/),key=m?'tp'+m[1]:tokens[i].text==='SL'||tokens[i].text==='STOPLOSS'?'sl':null;
+      let end=i;
+      if(!key&&tokens[i].text==='TP'&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-tokens[i].y)<tokens[i].h){key='tp'+tokens[i+1].text;end=i+1;}
+      if(!key||found[key])continue;
+      const a=tokens[end],tol=Math.max(12,a.h*1.6);
+      const candidates=tokens.map((w,j)=>({w,j,d:Math.min(Math.abs(w.x0-a.x1),Math.abs(a.x0-w.x1))}))
+        .filter(o=>o.j!==i&&o.j!==end&&!used.has(o.j)&&/^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-a.y)<tol&&o.d<Math.max(140,a.h*12))
+        .sort((x,y)=>Math.abs(x.w.y-a.y)-Math.abs(y.w.y-a.y)||x.d-y.d||y.w.confidence-x.w.confidence);
+      if(candidates.length){const c=candidates[0],v=price(c.w.text);if(v){found[key]=v;used.add(c.j);}}
+    }
+    return found;
   }
-  function read(){
-    const btn=$('ocrBtn');
-    if(!image){status('Select a chart screenshot first.',true);return;}
-    btn.disabled=true;btn.textContent='READ is working…';
-    (async()=>{
+  function extract(raw,data,prepared){
+    const text=String(raw||''),upper=text.toUpperCase();
+    let values={};
+    try{if(typeof window.parseOcrPrices==='function')values=window.parseOcrPrices(text)||{};}catch(_){}
+    let wordValues={};
+    try{if(typeof window.parseOcrWords==='function')wordValues=window.parseOcrWords(data.words,prepared.width)||{};}catch(_){}
+    Object.assign(values,wordValues,fallbackWords(data.words));
+    const symbol=upper.match(/\b([A-Z0-9]{2,15})\s*(?:[\/_-]\s*)?USDT(?:\s*\.?\s*P)?\b/)||
+      upper.match(/\b(BTC|ETH|XLM|XRP|SOL|ADA|BNB|DOGE|LTC|BCH|SUI|AVAX|LINK|DOT|TRX)\b/);
+    if(symbol)values.symbol=symbol[1].toUpperCase()+'USDT';
+    const tf=upper.match(/\b(1M|3M|5M|15M|30M|1H|2H|4H|6H|12H|1D|1W)\b/);
+    if(tf)values.timeframe=tf[1].toLowerCase();
+    try{
+      if(typeof window.locateOcrLevelRows==='function')
+        rows=window.locateOcrLevelRows(data.words,prepared.width,prepared.height,image.naturalWidth,image.naturalHeight)||{};
+    }catch(_){rows={};}
+    return values;
+  }
+  async function analyse(){
+    if(!image||busy)return;
+    busy=true;
+    try{
+      const T=await loadOCR();
+      const worker=await T.createWorker('eng',1,{logger:m=>{
+        if(m.status==='recognizing text')status('Reading chart… '+Math.round((m.progress||0)*100)+'%');
+      }});
       try{
-        const worker=await loadOCR(), result=await worker.recognize(image), raw=result.data?.text||'';
-        const upper=raw.toUpperCase(), found={};
-        const labels=[['tp1',/TP\s*1/],['tp2',/TP\s*2/],['tp3',/TP\s*3/],['tp4',/TP\s*4/],['tp5',/TP\s*5/],['sl',/(?:STOP\s*LOSS|STOPLOSS|\bSL\b)/]];
-        const lines=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
-        const number=line=>{const m=line.match(/\d[\d.,]*/g)||[];for(const x of m){const v=cleanPrice(x);if(v)return v;}return '';};
-        for(let i=0;i<lines.length;i++)for(const [key,re] of labels){
-          if(found[key]||!re.test(lines[i]))continue;
-          let v=number(lines[i].replace(re,' '));
-          if(!v)for(let j=i+1;j<Math.min(lines.length,i+3);j++){if(labels.some(([,r])=>r.test(lines[j])))break;v=number(lines[j]);if(v)break;}
-          if(v)found[key]=v;
+        let prepared=typeof window.preprocessOcrImage==='function'?window.preprocessOcrImage(image):image;
+        let result=await worker.recognize(prepared);
+        let values=extract(result.data.text,result.data,prepared);
+        // If full-image OCR misses the labels, run a second pass on the right price-scale region.
+        const missing=['tp1','tp2','tp3','tp4','tp5','sl'].some(k=>!values[k]);
+        if(missing&&prepared!==image){
+          const crop=document.createElement('canvas'),w=prepared.width,h=prepared.height;
+          crop.width=Math.max(1,Math.round(w*.48));crop.height=h;
+          crop.getContext('2d').drawImage(prepared,Math.round(w*.52),0,crop.width,h,0,0,crop.width,h);
+          const second=await worker.recognize(crop);
+          const right=extract(second.data.text,second.data,crop);
+          for(const k of ['tp1','tp2','tp3','tp4','tp5','sl'])if(!values[k]&&right[k])values[k]=right[k];
+          if(!values.symbol&&right.symbol)values.symbol=right.symbol;
         }
-        const sym=upper.match(/\b([A-Z0-9]{2,15})\s*(?:\.P)?\s*USDT\b/)||upper.match(/\b(BTC|ETH|XLM|XRP|SOL|ADA|BNB|DOGE|LTC|BCH|SUI|AVAX|LINK|DOT|TRX)\b/);
-        if(sym)$('symbol').value=sym[1].toUpperCase()+'USDT';
-        const tf=upper.match(/\b(1M|3M|5M|15M|30M|1H|2H|4H|6H|12H|1D|1W)\b/);
-        if(tf){const o=[...$('chartTf').options].find(x=>x.value===tf[1].toLowerCase());if(o)$('chartTf').value=o.value;}
-        if(/\bLONG\b/.test(upper)!==/\bSHORT\b/.test(upper))$('direction').value=/\bLONG\b/.test(upper)?'LONG':'SHORT';
-        for(const k of ['tp1','tp2','tp3','tp4','tp5','sl'])if(found[k]&&!$(k).value.trim())$(k).value=found[k];
-        const applied=Object.entries(found).map(([k,v])=>k.toUpperCase()+': '+v);
-        status('READ completed. Verify every extracted price and confirm the direction before generating.');
-        $('ocrCandidates').textContent=(applied.length?'Detected: '+applied.join(' · '):'No reliable labeled prices detected.')+(raw?'\n\nRecognized text:\n'+raw.slice(0,1600):'\nNo readable text found.');
-      }catch(e){workerPromise=null;status('READ error: '+(e.message||'Unable to read screenshot.'),true);}
-      finally{btn.disabled=false;btn.textContent='READ · Detect symbol, direction & prices';}
-    })();
+        if(values.symbol)$('symbol').value=values.symbol;
+        if(values.timeframe){const option=[...$('chartTf').options].find(o=>o.value===values.timeframe);if(option)$('chartTf').value=option.value;}
+        for(const k of ['tp1','tp2','tp3','tp4','tp5','sl'])if(values[k])$(k).value=price(values[k]);
+        let side=null,reason='';
+        const explicitLong=/\bLONG\b/.test(String(result.data.text||'').toUpperCase());
+        const explicitShort=/\bSHORT\b/.test(String(result.data.text||'').toUpperCase());
+        if(explicitLong!==explicitShort){side=explicitLong?'LONG':'SHORT';reason='direction label';}
+        if(!side){
+          const tps=[1,2,3,4,5].map(i=>Number($('tp'+i).value)).filter(n=>n>0);
+          const up=tps.length>=2&&tps.every((n,i)=>!i||n>tps[i-1]);
+          const down=tps.length>=2&&tps.every((n,i)=>!i||n<tps[i-1]);
+          if(up!==down){side=up?'LONG':'SHORT';reason='target sequence';}
+        }
+        if(!side&&$('entry').value&&$('sl').value){
+          const e=Number($('entry').value),s=Number($('sl').value);
+          if(e>0&&s>0&&e!==s){side=s<e?'LONG':'SHORT';reason='Stop Loss relative to Entry';}
+        }
+        if(!side&&values.sl&&rows.sl){
+          const y=rows.sl.y,ys=['tp1','tp2','tp3','tp4','tp5'].map(k=>rows[k]?.y).filter(Number.isFinite);
+          if(ys.length){const avg=ys.reduce((a,b)=>a+b,0)/ys.length;if(Math.abs(avg-y)>4){side=avg<y?'LONG':'SHORT';reason='TP/SL chart positions';}}
+        }
+        showDirection(side);
+        ocrReady=true;
+        const missingFields=['symbol','direction',...['tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>!$(k).value)];
+        const detected=['symbol','tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>k==='symbol'?!!$('symbol').value:!!$(k).value).map(k=>k.toUpperCase()+': '+(k==='symbol'?$('symbol').value:$(k).value));
+        const notice=$('autoLevels');
+        if(notice)notice.textContent=(detected.length?'Detected automatically — '+detected.join(' · '):'No reliable trade levels detected.')+(missingFields.length?'\nStill missing: '+missingFields.join(', ').toUpperCase()+'. The app will not invent missing values.':'');
+        status(missingFields.length?'Recognition finished, but some chart labels are unreadable. No signal was fabricated.':'Recognition complete. Enter your exact Entry to generate the setup.');
+        tryAutoGenerate();
+      }finally{try{await worker.terminate();}catch(_){}}
+    }catch(e){
+      ocrReady=false;status('Recognition error: '+(e.message||'Could not read this screenshot.'),true);
+    }finally{busy=false;}
+  }
+  function makeSignal(){
+    const sym=($('symbol').value||'').trim().toUpperCase().replace(/USDT$/,'');
+    const side=$('direction').value,entry=Number($('entry').value),sl=Number($('sl').value);
+    const tps=[1,2,3,4,5].map(i=>Number($('tp'+i).value));
+    if(!sym||!side||!entry||!sl||tps.some(n=>!n))throw new Error('The screenshot did not provide every required field. TRADEDESK will not invent a price.');
+    if(![entry,sl,...tps].every(n=>Number.isFinite(n)&&n>0))throw new Error('A detected price is invalid or unreadable.');
+    const ordered=side==='LONG'?sl<entry&&entry<tps[0]&&tps.every((v,i)=>!i||tps[i-1]<v):sl>entry&&entry>tps[0]&&tps.every((v,i)=>!i||tps[i-1]>v);
+    if(!ordered)throw new Error('Detected prices do not form a valid '+side+' sequence. The screenshot labels need clearer recognition; no values were changed.');
+    return [sym+' '+side+' TRADE SETUP','','ENTRY: '+$('entry').value.trim(),'','TP1: '+$('tp1').value,'TP2: '+$('tp2').value,'TP3: '+$('tp3').value,'TP4: '+$('tp4').value,'TP5: '+$('tp5').value,'','SL: '+$('sl').value,'','RISK 1% OR LESS'].join('\n');
   }
   function generate(){
-    const get=id=>($(id)?.value||'').trim();
-    const symbol=get('symbol').toUpperCase().replace(/USDT$/,'');
-    const side=get('direction').toUpperCase(), entry=Number(get('entry')), sl=Number(get('sl'));
-    const tps=[1,2,3,4,5].map(i=>Number(get('tp'+i)));
     const err=$('setupError');err.textContent='';
-    if(!symbol||!get('entry')||!get('sl')||[1,2,3,4,5].some(i=>!get('tp'+i))){err.textContent='Complete Symbol, Entry, TP1–TP5 and Stop Loss.';return;}
-    if(!['LONG','SHORT'].includes(side)){err.textContent='Confirm LONG or SHORT direction.';return;}
-    if(![entry,sl,...tps].every(n=>Number.isFinite(n)&&n>0)){err.textContent='All prices must be valid positive numbers.';return;}
-    const ordered=side==='LONG'?sl<entry&&entry<tps[0]&&tps.every((v,i)=>!i||tps[i-1]<v):sl>entry&&entry>tps[0]&&tps.every((v,i)=>!i||tps[i-1]>v);
-    if(!ordered){err.textContent=side==='LONG'?'LONG order: SL < ENTRY < TP1 < TP2 < TP3 < TP4 < TP5.':'SHORT order: SL > ENTRY > TP1 > TP2 > TP3 > TP4 > TP5.';return;}
-    const lines=[symbol+' '+side+' TRADE SETUP','','ENTRY: '+get('entry'),'','TP1: '+get('tp1'),'TP2: '+get('tp2'),'TP3: '+get('tp3'),'TP4: '+get('tp4'),'TP5: '+get('tp5'),'','SL: '+get('sl'),'','RISK 1% OR LESS'];
-    if(get('invalid'))lines.push('',get('invalid').toUpperCase());
-    $('signalText').textContent=lines.join('\n');
+    let text;
+    try{text=makeSignal();}catch(e){err.textContent=e.message;return false;}
+    $('signalText').textContent=text;
     canvas=document.createElement('canvas');
-    if(image){canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;const c=canvas.getContext('2d');c.drawImage(image,0,0);c.strokeStyle=side==='LONG'?'#23c98b':'#ff647c';c.lineWidth=Math.max(3,Math.round(canvas.width*.006));c.strokeRect(c.lineWidth/2,c.lineWidth/2,canvas.width-c.lineWidth,canvas.height-c.lineWidth);}
-    else{canvas.width=1600;canvas.height=900;const c=canvas.getContext('2d');c.fillStyle='#080e18';c.fillRect(0,0,1600,900);c.fillStyle=side==='LONG'?'#23c98b':'#ff647c';c.font='bold 42px Arial';c.fillText(symbol+' '+side+' TRADE SETUP',70,95);c.fillStyle='#eaf2ff';c.font='bold 30px Arial';lines.slice(2).filter(Boolean).forEach((s,i)=>c.fillText(s,80,180+i*65));}
-    const out=new Image();out.onload=()=>{const box=$('chartOutput');box.replaceChildren(out);out.style.cssText='display:block;width:100%;height:auto';};out.src=canvas.toDataURL('image/png');
+    canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+    const c=canvas.getContext('2d');c.drawImage(image,0,0);
+    const w=canvas.width,h=canvas.height;
+    for(const [key,row] of Object.entries(rows)){
+      const y=Math.max(0,Math.min(h-1,Math.round(row.y)));
+      c.save();c.strokeStyle=key==='sl'?'#ff4058':'#21d69a';c.globalAlpha=.92;
+      c.lineWidth=Math.max(2,Math.round(w*.0018));c.setLineDash([Math.max(5,w*.006),Math.max(4,w*.004)]);
+      c.beginPath();c.moveTo(w*.035,y);c.lineTo(w*.975,y);c.stroke();c.restore();
+    }
+    const accent=$('direction').value==='LONG'?'#23c98b':'#ff647c';
+    c.save();c.strokeStyle=accent;c.lineWidth=Math.max(3,Math.round(w*.005));c.strokeRect(c.lineWidth/2,c.lineWidth/2,w-c.lineWidth,h-c.lineWidth);c.restore();
+    const out=new Image();out.onload=()=>{$('chartOutput').replaceChildren(out);out.style.cssText='display:block;width:100%;height:auto;object-fit:contain';};
+    out.src=canvas.toDataURL('image/png');
     $('downloadImageBtn').disabled=false;
-    status('Setup generated. Check the signal text and image before publishing.');
-    try{const h=JSON.parse(localStorage.getItem('td_history')||'[]');h.unshift({type:'Trade setup',summary:symbol+' '+side+' · Entry '+get('entry'),time:new Date().toLocaleString()});localStorage.setItem('td_history',JSON.stringify(h.slice(0,30)));}catch(_){}
+    status('Setup and chart image generated from the screenshot and your Entry.');
+    return true;
   }
-
-  // Capture-phase delegation prevents the legacy handlers in index.html from racing this controller.
+  function tryAutoGenerate(){
+    if(!ocrReady||!image||!$('entry').value.trim())return;
+    if(['symbol','direction','tp1','tp2','tp3','tp4','tp5','sl'].some(k=>!$(k).value.trim()))return;
+    generate();
+  }
   document.addEventListener('change',e=>{
     if(e.target?.id!=='chartFile')return;
     e.stopImmediatePropagation();preview(e.target.files?.[0]);
+  },true);
+  document.addEventListener('input',e=>{
+    if(e.target?.id==='entry')tryAutoGenerate();
   },true);
   document.addEventListener('click',e=>{
     const id=e.target?.closest?.('#ocrBtn,#generateBtn,#downloadImageBtn')?.id;
     if(!id)return;
     e.preventDefault();e.stopImmediatePropagation();
-    if(id==='ocrBtn')read();
+    if(id==='ocrBtn')analyse();
     if(id==='generateBtn')generate();
-    if(id==='downloadImageBtn'&&canvas)canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=(($('symbol').value||'trade').toUpperCase())+'_setup.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);},'image/png');
+    if(id==='downloadImageBtn'&&canvas)canvas.toBlob(blob=>{
+      if(!blob)return;const url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=(($('symbol').value||'trade').toUpperCase())+'_setup.png';a.click();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+    },'image/png');
   },true);
 })();
