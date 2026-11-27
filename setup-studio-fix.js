@@ -63,6 +63,28 @@
       h:Math.max(1,w.bbox.y1-w.bbox.y0),confidence:w.confidence||50,j
     })).sort((a,b)=>a.y-b.y||a.x0-b.x0);
     const used=new Set();
+    // OCR engines sometimes split a decimal price into separate words:
+    // "0" + "." + "12825". Rebuild adjacent numeric fragments before matching.
+    const numericGroups=[];
+    for(let i=0;i<tokens.length;i++){
+      if(!/^[0-9.,]+$/.test(tokens[i].text))continue;
+      const parts=[tokens[i]];let last=tokens[i];
+      for(let j=i+1;j<tokens.length;j++){
+        const q=tokens[j],dy=Math.abs(q.y-last.y),dx=q.x0-last.x1;
+        if(dy>Math.max(4,last.h*.45)||dx< -2||dx>Math.max(7,last.h*.85)||!/^[0-9.,]+$/.test(q.text))break;
+        parts.push(q);last=q;
+      }
+      if(parts.length>1){
+        const joined=parts.map(p=>p.text).join('');
+        if(/[0-9]/.test(joined))numericGroups.push({
+          text:joined,x0:parts[0].x0,x1:parts[parts.length-1].x1,
+          y:parts.reduce((s,p)=>s+p.y,0)/parts.length,
+          h:Math.max(...parts.map(p=>p.h)),
+          confidence:Math.min(...parts.map(p=>p.confidence)),
+          j:parts[0].j,_parts:parts.map(p=>p.j)
+        });
+      }
+    }
     for(let i=0;i<tokens.length;i++){
       const t=tokens[i];
       const compact=t.text.replace(/0/g,'O').replace(/[|!]/g,'I');
@@ -71,16 +93,21 @@
       if(!key&&/^(?:TP|T[PPI])$/.test(compact)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-t.y)<Math.max(t.h,tokens[i+1].h)*1.8){key='tp'+tokens[i+1].text;end=i+1;}
       if(!key&&/^(?:TPS|TPSS|TP5S)$/.test(compact))key='tp5';
       if(!key)continue;
-      const label=tokens[end],tol=Math.max(18,label.h*2.2);
+      const label=tokens[end],tol=Math.max(7,label.h*.85);
       labelRows[key]={y:label.y,x0:t.x0,x1:label.x1};
       if(found[key])continue;
-      const candidates=tokens.map(w=>({w,d:Math.min(Math.abs(w.x0-label.x1),Math.abs(label.x0-w.x1))}))
-        .filter(o=>!used.has(o.w.j)&&o.w.j!==t.j&&o.w.j!==label.j&&/^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-label.y)<tol)
-        // Prefer the number physically nearest to the TP/SL label.
-        // The far-right price axis often contains unrelated ticks on the same row;
-        // choosing the rightmost token caused errors such as 0.12825 becoming 2822.
+      const maxX=Math.max(...tokens.map(q=>q.x1)),maxGap=maxX*.28;
+      const pool=[...numericGroups,...tokens.filter(w=>/^[0-9][\d.,]*$/.test(w.text)).map(w=>({...w,_parts:[w.j]}))];
+      const candidates=pool.map(w=>({w,d:Math.min(Math.abs(w.x0-label.x1),Math.abs(label.x0-w.x1))}))
+        .filter(o=>o.w._parts.every(j=>!used.has(j))&&o.w._parts.every(j=>j!==t.j&&j!==label.j)&&
+          /^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-label.y)<tol&&o.d<maxGap&&o.w.confidence>=25)
+        // A TP value must share the label's visual row and be close to that label.
+        // Do not substitute a distant chart-axis tick just because it is on a similar row.
         .sort((x,y)=>Math.abs(x.w.y-label.y)-Math.abs(y.w.y-label.y)||x.d-y.d||y.w.confidence-x.w.confidence);
-      if(candidates.length){const c=candidates[0],v=price(c.w.text);if(v){found[key]=v;used.add(c.w.j);}}
+      for(const c of candidates){
+        const v=price(c.w.text);
+        if(v){found[key]=v;c.w._parts.forEach(j=>used.add(j));break;}
+      }
     }
     // Recover tickers split into adjacent OCR words, e.g. BTC + USDT.
     for(let i=0;i<tokens.length;i++){
@@ -207,8 +234,8 @@
         if(found[item.key]||!numbers.length)continue;
         const ly=(item.word.bbox.y0+item.word.bbox.y1)/2,lx=(item.word.bbox.x0+item.word.bbox.x1)/2;
         const candidates=numbers.map(q=>({q,dy:Math.abs((q.bbox.y0+q.bbox.y1)/2-ly),dx:Math.abs((q.bbox.x0+q.bbox.x1)/2-lx)}))
-          .filter(v=>v.dy<Math.max(18,(item.word.bbox.y1-item.word.bbox.y0)*1.8))
-          .sort((a,b)=>a.dy-b.dy||a.dx-b.dx);
+          .filter(v=>v.dy<Math.max(7,(item.word.bbox.y1-item.word.bbox.y0)*.85)&&v.dx<crop.width*.28&&(Number(v.q.confidence)||0)>=25)
+          .sort((a,b)=>a.dy-b.dy||a.dx-b.dx||((b.q.confidence||0)-(a.q.confidence||0)));
         if(candidates.length){const value=price(candidates[0].q.text);if(value)found[item.key]=value;}
       }
     }
