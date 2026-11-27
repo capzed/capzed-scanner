@@ -169,7 +169,7 @@ async function renderChart(text){
  c.fillStyle='#8da3bf';c.font='15px Arial';c.fillText('RECONSTRUCTED FROM BINANCE FUTURES MARKET DATA · '+new Date().toLocaleString(),1150,46);
  const chart={x:55,y:120,w:1260,h:790},panel={x:1360,y:120,w:390,h:790};
  c.fillStyle='#0c1727';c.fillRect(chart.x,chart.y,chart.w,chart.h);c.strokeStyle='#293b54';c.strokeRect(chart.x,chart.y,chart.w,chart.h);
- const entry=Number(val('entry')),sl=Number(val('sl')),tps=[1,2,3,4,5].map(i=>Number(val('tp'+i)));
+ const entry=Number(val('entry')),sl=Number(val('sl')),tps=[1,2,3,4,5].map(i=>Number(val('tp'+i))).filter(v=>Number.isFinite(v)&&v>0);
  let bars=candles.map(k=>({o:+k[1],h:+k[2],l:+k[3],c:+k[4],t:+k[0]})).filter(k=>[k.o,k.h,k.l,k.c].every(Number.isFinite));
  if(!bars.length&&uploadedImage){c.fillStyle='#9fb1c9';c.font='22px Arial';c.fillText('Live candles unavailable — original screenshot is not automatically interpreted.',90,180);}
  if(bars.length){
@@ -347,7 +347,7 @@ function download(blob,name){const a=document.createElement('a');a.href=URL.crea
  if('caches' in window)caches.keys().then(function(keys){keys.filter(function(k){return k.indexOf('tradedesk-')===0;}).forEach(function(k){caches.delete(k);});}).catch(function(){});
 })();
 </script>
-<script src="./setup-studio-fix.js?v=20261127o"></script>
+<script src="./setup-studio-fix.js?v=20261127p"></script>
 <script>
 /* Hard override: prevent the legacy inline generator from taking the Generate click. */
 (function(){
