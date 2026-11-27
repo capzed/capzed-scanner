@@ -356,6 +356,18 @@
           for(const k of ['tp1','tp2','tp3','tp4','tp5','sl'])if(!values[k]&&right[k])values[k]=right[k];
           if(!values.symbol&&right.symbol)values.symbol=right.symbol;
         }
+        // Final safety net across every OCR pass (full image, colour mask and right crop).
+        // A bare one-digit integer beside a TP label is almost always the label index,
+        // not a market price. Keep decimal prices (e.g. 0.1234 or 1.25) untouched.
+        const rejectedIndexDigits=[];
+        for(const k of ['tp1','tp2','tp3','tp4','tp5']){
+          if(!values[k])continue;
+          const normalized=price(values[k]);
+          if(normalized&&/^\\d$/.test(normalized)){
+            rejectedIndexDigits.push(k.toUpperCase()+': '+values[k]);
+            delete values[k];
+          }
+        }
         const rejectedScalePrices=rejectScaleMismatches(values);
         if(values.symbol)$('symbol').value=values.symbol;
         if(values.timeframe){const option=[...$('chartTf').options].find(o=>o.value===values.timeframe);if(option)$('chartTf').value=option.value;}
