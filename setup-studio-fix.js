@@ -189,18 +189,19 @@
     const base=document.createElement('canvas');base.width=w;base.height=h;
     const bctx=base.getContext('2d',{willReadFrequently:true});bctx.drawImage(source,0,0,w,h);
     const pixels=bctx.getImageData(0,0,w,h).data,rowsFound=[];
-    // Find coloured annotation rows on the right half, where TradingView-style
-    // level labels and their prices are normally printed.
     const xStart=Math.floor(w*.48);
     for(let y=0;y<h;y++){
       let count=0;
       for(let x=xStart;x<w;x+=2){
         const i=(y*w+x)*4,r=pixels[i]/255,g=pixels[i+1]/255,b=pixels[i+2]/255;
         const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
-        let hue=0;if(d){if(max===r)hue=60*(((g-b)/d)%6);else if(max===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
+        let hue=0;
+        if(d){if(max===r)hue=60*(((g-b)/d)%6);else if(max===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
         if(hue<0)hue+=360;
         const sat=max===0?0:d/max;
-        const match=kind==='yellow'?(hue>=25&&hue<=88&&sat>.14&&max>.28):((hue<=24||hue>=336)&&sat>.18&&max>.22);
+        const match=kind==='yellow'
+          ?hue>=25&&hue<=88&&sat>.18&&max>.28
+          :(hue<=24||hue>=336)&&sat>.20&&max>.25;
         if(match&&++count>=2)break;
       }
       if(count>=2)rowsFound.push(y);
@@ -212,14 +213,12 @@
       if(last&&y-last.end<=Math.max(6,Math.round(h*.006))){last.end=y;last.center=(last.start+last.end)/2;}
       else clusters.push({start:y,end:y,center:y});
     }
+    // Bound the number of OCR passes: coloured candles/lines can create many rows.
+    // The first 18 rows are enough for TP1-TP5, SL and nearby chart annotations.
     const found={};
-    for(const cluster of clusters){
-      // Wider vertical band protects glyphs whose coloured outline/line is
-      // slightly above or below the actual text baseline.
-      const band=Math.max(54,Math.round(h*.075));
+    for(const cluster of clusters.slice(0,18)){
+      const band=Math.max(44,Math.round(h*.06));
       const y0=Math.max(0,Math.round(cluster.center-band/2)),y1=Math.min(h,y0+band);
-      // Include more of the chart's right side: some layouts put TP/SL tags
-      // just left of the price scale rather than at the extreme edge.
       const sx=Math.floor(w*.38),sw=w-sx;
       const crop=document.createElement('canvas');crop.width=sw*4;crop.height=Math.max(1,(y1-y0)*4);
       const cc=crop.getContext('2d');cc.imageSmoothingEnabled=false;
@@ -234,41 +233,52 @@
       }finally{
         if(worker.setParameters)try{await worker.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});}catch(_){}
       }
-      const words=(result.data.words||[]).filter(q=>q&&q.bbox&&String(q.text||'').trim())
-        .map(q=>({raw:String(q.text).trim(),text:String(q.text).toUpperCase().replace(/[^A-Z0-9]/g,''),x0:q.bbox.x0,x1:q.bbox.x1,y:(q.bbox.y0+q.bbox.y1)/2,h:Math.max(1,q.bbox.y1-q.bbox.y0),conf:Number(q.confidence)||0}))
+      const words=(result.data.words||[])
+        .filter(q=>q&&q.bbox&&String(q.text||'').trim()&&(q.confidence===undefined||q.confidence>=20))
+        .map((q,index)=>({
+          raw:String(q.text).trim(),
+          text:String(q.text).toUpperCase().replace(/[^A-Z0-9]/g,''),
+          x0:q.bbox.x0,x1:q.bbox.x1,
+          y:(q.bbox.y0+q.bbox.y1)/2,
+          h:Math.max(1,q.bbox.y1-q.bbox.y0),
+          conf:Number(q.confidence)||0,index
+        }))
         .sort((a,b)=>a.y-b.y||a.x0-b.x0);
       const labels=[];
       for(let i=0;i<words.length;i++){
         const raw=words[i].text;
         let key=(raw.match(/^TP([1-5])$/)||[])[1];
         key=key?'tp'+key:(/^(SL|5L|S1|STOPLOSS|STOP)$/.test(raw)?'sl':null);
-        if(!key&&raw==='TP'&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5)key='tp'+words[i+1].text;
-        if(key&&(kind==='yellow'?key.startsWith('tp'):key==='sl'))labels.push({key,word:words[i]});
+        const skip=new Set([i]);
+        if(!key&&raw==='TP'&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5){
+          key='tp'+words[i+1].text;skip.add(i+1);
+        }
+        if(key&&(kind==='yellow'?key.startsWith('tp'):key==='sl'))labels.push({key,word:words[i],skip});
       }
       const numeric=words.filter(q=>/^[0-9.,]+$/.test(q.raw));
       for(const item of labels){
         if(found[item.key])continue;
-        const label=item.word, candidates=[];
-        // Build numbers from adjacent OCR fragments on the same baseline.
-        // This handles "0" + "." + "12825" and similar split decimals.
-        for(let i=0;i<numeric.length;i++){
-          const first=numeric[i];
-          const parts=[first];let last=first;
-          for(let j=i+1;j<numeric.length;j++){
-            const next=numeric[j],dy=Math.abs(next.y-last.y),dx=next.x0-last.x1;
-            if(dy>Math.max(10,last.h*.8)||dx< -3||dx>Math.max(18,last.h*1.8))break;
-            if(next.x0<label.x0-5&&first.x0>=label.x1)break;
+        const label=item.word,candidates=[];
+        // Only consider price tokens to the RIGHT of the label. This avoids
+        // mistaking TP's own index (e.g. the "1" in TP 1) or a left-side axis tick.
+        const eligible=numeric.filter(q=>!item.skip.has(words.indexOf(q))&&q.x0>=label.x1-5);
+        for(let i=0;i<eligible.length;i++){
+          const first=eligible[i],parts=[first];let last=first;
+          for(let j=i+1;j<eligible.length;j++){
+            const next=eligible[j],dy=Math.abs(next.y-last.y),dx=next.x0-last.x1;
+            if(dy>Math.max(10,last.h*.8)||dx< -3||dx>Math.max(14,last.h*.7))break;
             parts.push(next);last=next;
           }
           const joined=parts.map(p=>p.raw.replace(/[^0-9.,]/g,'')).join('');
-          if(!/[0-9]/.test(joined))continue;
-          const cy=parts.reduce((a,p)=>a+p.y,0)/parts.length;
-          const x0=parts[0].x0,x1=parts[parts.length-1].x1;
-          const dy=Math.abs(cy-label.y);
-          const dx=Math.min(Math.abs(x0-label.x1),Math.abs(label.x0-x1));
-          const val=price(joined);
-          if(val&&dy<Math.max(20,label.h*1.65)&&dx<crop.width*.42){
-            candidates.push({val,dy,dx,conf:Math.min(...parts.map(p=>p.conf)),parts:parts.length});
+          const variants=[{val:price(first.raw),parts:[first]}];
+          if(parts.length>1)variants.push({val:price(joined),parts});
+          for(const variant of variants){
+            if(!variant.val)continue;
+            const cy=variant.parts.reduce((a,p)=>a+p.y,0)/variant.parts.length;
+            const x0=variant.parts[0].x0,dy=Math.abs(cy-label.y),dx=x0-label.x1;
+            if(dy<Math.max(18,label.h*1.5)&&dx>=-5&&dx<Math.max(35,label.h*8)){
+              candidates.push({val:variant.val,dy,dx,conf:Math.min(...variant.parts.map(p=>p.conf)),parts:variant.parts.length});
+            }
           }
         }
         candidates.sort((a,b)=>a.dy-b.dy||a.dx-b.dx||b.conf-a.conf||b.parts-a.parts);
@@ -370,6 +380,7 @@
   }
   function generate(){
     const err=$('setupError');err.textContent='';
+    if(!image){err.textContent='Upload a chart screenshot first.';return false;}
     let text;
     try{text=makeSignal();}catch(e){err.textContent=e.message;return false;}
     $('signalText').textContent=text;
