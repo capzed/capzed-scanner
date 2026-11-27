@@ -347,7 +347,7 @@ function download(blob,name){const a=document.createElement('a');a.href=URL.crea
  if('caches' in window)caches.keys().then(function(keys){keys.filter(function(k){return k.indexOf('tradedesk-')===0;}).forEach(function(k){caches.delete(k);});}).catch(function(){});
 })();
 </script>
-<script src="./setup-studio-fix.js?v=20261127v9"></script>
+<script src="./setup-studio-fix.js?v=20261127v10"></script>
 <script>
 /* Hard override: prevent the legacy inline generator from taking the Generate click. */
 (function(){
