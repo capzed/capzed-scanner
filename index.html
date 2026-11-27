@@ -20,7 +20,7 @@ main{max-width:1180px;margin:26px auto;padding:0 16px 80px}.hero{display:flex;ju
 @media(max-width:440px){main{margin-top:18px}.panel{padding:14px}.metrics{gap:6px}.metric{padding:9px}.metric b{font-size:17px}nav button{font-size:11px;padding:8px 6px}}
 </style></head>
 <body>
-<header><div class="brand"><div class="logo">T</div><div>TRADEDESK<small>LEVELS & SETUP ASSISTANT</small></div></div><nav><button class="active" data-tab="scanner">Levels Scanner</button><button data-tab="setup">Setup Studio</button><button data-tab="history">History</button></nav></header>
+<header><div class="brand"><div class="logo">T</div><div>TRADEDESK<small>LEVELS & SETUP ASSISTANT</small></div></div><nav><button class="active" data-tab="scanner">Levels Scanner</button><button type="button" data-tab="setup" onclick="window.__tdOpenSetup && window.__tdOpenSetup(event)">Setup Studio</button><button data-tab="history">History</button></nav></header>
 <main>
 <section id="scanner" class="section active">
 <div class="hero"><div><div class="eyebrow">Market intelligence workspace</div><h1>Trading Levels Scanner</h1><div class="sub">Score your supplied price levels against live Binance USDT-M Futures market data and rank the strongest candidates for the next 30 minutes.</div></div><span class="status">● PUBLIC MARKET DATA · NO API KEY</span></div>
@@ -334,7 +334,17 @@ document.addEventListener('click',function(event){
  if(target==='history'&&typeof renderHistory==='function')renderHistory();
 });
 </script>
-<script src="./setup-studio-fix.js?v=20261127g"></script>
+<script>
+/* Direct Setup Studio navigation fallback. */
+window.__tdOpenSetup=function(event){
+ if(event){event.preventDefault();event.stopPropagation();}
+ document.querySelectorAll('nav button[data-tab]').forEach(function(b){b.classList.toggle('active',b.dataset.tab==='setup')});
+ document.querySelectorAll('main > section.section').forEach(function(s){s.classList.toggle('active',s.id==='setup')});
+ var pane=document.getElementById('setup');
+ if(pane){pane.style.display='block';pane.classList.add('active');}
+};
+</script>
+<script src="./setup-studio-fix.js?v=20261127h"></script>
 <script>
 /* Hard override: prevent the legacy inline generator from taking the Generate click. */
 (function(){
