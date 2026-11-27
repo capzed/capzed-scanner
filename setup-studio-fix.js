@@ -20,6 +20,23 @@
     else if((v.match(/\./g)||[]).length>1){const last=v.lastIndexOf('.');v=v.slice(0,last).replace(/\./g,'')+v.slice(last);}
     const n=Number(v);return Number.isFinite(n)&&n>0?String(n):'';
   }
+  // Reject OCR readings on a wildly different price scale from the trade.
+  // Never guess where a missing decimal belongs: an implausible reading stays blank.
+  function rejectScaleMismatches(values){
+    const entry=Number($('entry')?.value),sl=Number(values.sl||$('sl')?.value);
+    const anchor=entry>0?entry:(sl>0?sl:0),rejected=[];
+    if(!anchor)return rejected;
+    for(const key of ['tp1','tp2','tp3','tp4','tp5']){
+      const raw=values[key];if(!raw)continue;
+      const n=Number(price(raw));if(!(n>0))continue;
+      const ratio=n/anchor;
+      if(!Number.isFinite(ratio)||ratio<0.01||ratio>100){
+        rejected.push(key.toUpperCase()+': '+raw);
+        delete values[key];
+      }
+    }
+    return rejected;
+  }
   function preview(file){
     if(!file)return;
     if(file.type&&!file.type.startsWith('image/')){status('Please select a chart image.',true);return;}
@@ -328,6 +345,7 @@
           for(const k of ['tp1','tp2','tp3','tp4','tp5','sl'])if(!values[k]&&right[k])values[k]=right[k];
           if(!values.symbol&&right.symbol)values.symbol=right.symbol;
         }
+        const rejectedScalePrices=rejectScaleMismatches(values);
         if(values.symbol)$('symbol').value=values.symbol;
         if(values.timeframe){const option=[...$('chartTf').options].find(o=>o.value===values.timeframe);if(option)$('chartTf').value=option.value;}
         for(const k of ['tp1','tp2','tp3','tp4','tp5','sl'])if(values[k])$(k).value=price(values[k]);
@@ -360,7 +378,7 @@
         const missingFields=[...(!$('symbol').value?['symbol']:[]),...(!$('direction').value?['direction']:[]),...(tpCount<2?['at least 2 TP']:[]),...(!$('sl').value?['SL']:[])];
         const detected=['symbol','direction','tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>$(k).value).map(k=>k.toUpperCase()+': '+$(k).value);
         const notice=$('autoLevels');
-        if(notice)notice.textContent=(detected.length?'Detected automatically — '+detected.join(' · '):'No reliable trade levels detected.')+(missingFields.length?'\nStill missing: '+missingFields.join(', ').toUpperCase()+'. The app will not invent missing values.':'');
+        if(notice)notice.textContent=(detected.length?'Detected automatically — '+detected.join(' · '):'No reliable trade levels detected.')+(rejectedScalePrices.length?'\\nRejected implausible OCR price(s): '+rejectedScalePrices.join(', ')+'. Please verify these labels; no decimal was guessed.':'')+(missingFields.length?'\nStill missing: '+missingFields.join(', ').toUpperCase()+'. The app will not invent missing values.':'');
         status(missingFields.length?'Recognition finished, but some chart labels are unreadable. No signal was fabricated.':'Recognition complete. Enter your exact Entry to generate the setup.');
         tryAutoGenerate();
       }finally{try{await worker.terminate();}catch(_){}}
