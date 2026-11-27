@@ -299,7 +299,9 @@
             if(!variant.val)continue;
             const cy=variant.parts.reduce((a,p)=>a+p.y,0)/variant.parts.length;
             const x0=variant.parts[0].x0,dy=Math.abs(cy-label.y),dx=x0-label.x1;
-            if(dy<Math.max(18,label.h*1.5)&&dx>=-5&&dx<Math.max(35,label.h*8)){
+            // The printed price can be far to the right of its coloured TP/SL tag.
+            // Keep the same-row constraint, but search the entire remaining price-scale width.
+            if(dy<Math.max(18,label.h*1.5)&&dx>=-5&&dx<sw*.92){
               candidates.push({val:variant.val,dy,dx,conf:Math.min(...variant.parts.map(p=>p.conf)),parts:variant.parts.length});
             }
           }
