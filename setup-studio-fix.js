@@ -298,7 +298,7 @@
     if(![entry,sl,...tps].every(n=>Number.isFinite(n)&&n>0))throw new Error('A detected price is invalid or unreadable.');
     const ordered=side==='LONG'?sl<entry&&entry<tps[0]&&tps.every((v,i)=>!i||tps[i-1]<v):sl>entry&&entry>tps[0]&&tps.every((v,i)=>!i||tps[i-1]>v);
     if(!ordered)throw new Error('Detected prices do not form a valid '+side+' sequence. The screenshot labels need clearer recognition; no values were changed.');
-    return [sym+' '+side+' TRADE SETUP','','ENTRY: '+$('entry').value.trim(),'',...tps.map((v,i)=>'TP'+(i+1)+': '+rawTps[i]),'','SL: '+$('sl').value,'','RISK 1% OR LESS'].join('\\n');
+    return [sym+' '+side+' TRADE SETUP','','ENTRY: '+$('entry').value.trim(),'',...tps.map((v,i)=>'TP'+(i+1)+': '+rawTps[i]),'','SL: '+$('sl').value,'','RISK 1% OR LESS'].join('\n');
   }
   function generate(){
     const err=$('setupError');err.textContent='';
