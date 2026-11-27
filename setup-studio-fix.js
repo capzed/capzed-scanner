@@ -114,6 +114,28 @@
     }catch(_){rows={};}
     return values;
   }
+  // Build colour-isolated OCR images: yellow marks TP labels/values, red marks SL.
+  function colourMask(source,kind){
+    const w=source.naturalWidth||source.width,h=source.naturalHeight||source.height;
+    const out=document.createElement('canvas');out.width=w;out.height=h;
+    const ctx=out.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0,w,h);
+    const frame=ctx.getImageData(0,0,w,h),p=frame.data;
+    for(let i=0;i<p.length;i+=4){
+      const r=p[i]/255,g=p[i+1]/255,b=p[i+2]/255;
+      const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;
+      let hue=0;if(d){if(max===r)hue=60*(((g-b)/d)%6);else if(max===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
+      if(hue<0)hue+=360;
+      const sat=max===0?0:d/max;
+      const yellow=hue>=32&&hue<=78&&sat>.22&&max>.28;
+      const red=(hue<=16||hue>=344)&&sat>.25&&max>.25;
+      const keep=kind==='yellow'?yellow:red;
+      const v=keep?0:255;p[i]=p[i+1]=p[i+2]=v;p[i+3]=255;
+    }
+    ctx.putImageData(frame,0,0);
+    const big=document.createElement('canvas');big.width=w*2;big.height=h*2;
+    const bctx=big.getContext('2d');bctx.imageSmoothingEnabled=false;bctx.drawImage(out,0,0,big.width,big.height);
+    return big;
+  }
   async function analyse(){
     if(!image||busy)return;
     busy=true;
@@ -126,6 +148,15 @@
         let prepared=typeof window.preprocessOcrImage==='function'?window.preprocessOcrImage(image):image;
         let result=await worker.recognize(prepared);
         let values=extract(result.data.text,result.data,prepared);
+        // Read yellow TP annotations and red SL annotations independently of the chart background.
+        for(const kind of ['yellow','red']){
+          const mask=colourMask(image,kind);
+          const colourResult=await worker.recognize(mask);
+          const colourValues=extract(colourResult.data.text,colourResult.data,mask);
+          const keys=kind==='yellow'?['tp1','tp2','tp3','tp4','tp5']:['sl'];
+          for(const k of keys)if(!values[k]&&colourValues[k])values[k]=colourValues[k];
+          values._labelRows={...(values._labelRows||{}),...(colourValues._labelRows||{})};
+        }
         // If full-image OCR misses the labels, run a second pass on the right price-scale region.
         const missing=['tp1','tp2','tp3','tp4','tp5','sl'].some(k=>!values[k]);
         if(missing&&prepared!==image){
