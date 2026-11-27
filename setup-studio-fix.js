@@ -300,7 +300,7 @@
             // A one-digit OCR token is usually the TP index (TP1/TP2), not a
             // market price. Require a decimal price or at least four digits
             // (e.g. 0.12825, 63200); never publish "1" as a TP value.
-            const digits=(variant.val.match(/\\d/g)||[]).length;
+            const digits=(variant.val.match(/\d/g)||[]).length;
             const hasDecimal=/[.,]/.test(variant.parts.map(p=>p.raw).join(''));
             if(digits<4&&!(hasDecimal&&digits>=2))continue;
             const cy=variant.parts.reduce((a,p)=>a+p.y,0)/variant.parts.length;
