@@ -418,6 +418,7 @@
   // Public bridge used by the page after this controller loads; replaces the legacy generator.
   window.TradeDeskSetup = { generate, analyse, getState:()=>({symbol:$('symbol')?.value||'',direction:$('direction')?.value||'',entry:$('entry')?.value||'',tp1:$('tp1')?.value||'',tp2:$('tp2')?.value||'',tp3:$('tp3')?.value||'',tp4:$('tp4')?.value||'',tp5:$('tp5')?.value||'',sl:$('sl')?.value||''}) };
   document.addEventListener('change',e=>{
+    if(e.target?.id==='direction'){tryAutoGenerate();return;}
     if(e.target?.id!=='chartFile')return;
     e.stopImmediatePropagation();preview(e.target.files?.[0]);
   },true);
