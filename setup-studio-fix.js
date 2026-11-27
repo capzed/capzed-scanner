@@ -363,7 +363,7 @@
         for(const k of ['tp1','tp2','tp3','tp4','tp5']){
           if(!values[k])continue;
           const normalized=price(values[k]);
-          if(normalized&&/^\\d$/.test(normalized)){
+          if(normalized&&/^\d$/.test(normalized)){
             rejectedIndexDigits.push(k.toUpperCase()+': '+values[k]);
             delete values[k];
           }
