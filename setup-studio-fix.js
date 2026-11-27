@@ -186,6 +186,10 @@
   }
   function tryAutoGenerate(){
     if(!ocrReady||!image||!$('entry').value.trim())return;
+    if(!$('direction').value&&$('sl').value){
+      const e=Number($('entry').value),s=Number($('sl').value);
+      if(e>0&&s>0&&e!==s)showDirection(s<e?'LONG':'SHORT');
+    }
     if(['symbol','direction','tp1','tp2','tp3','tp4','tp5','sl'].some(k=>!$(k).value.trim()))return;
     generate();
   }
