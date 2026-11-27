@@ -245,7 +245,7 @@
         if(!key&&raw==='TP'&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5)key='tp'+words[i+1].text;
         if(key&&(kind==='yellow'?key.startsWith('tp'):key==='sl'))labels.push({key,word:words[i]});
       }
-      const numeric=words.filter(q=>/^[0-9.,]+$/.test(q.raw)&&/[0-9]/.test(q.raw));
+      const numeric=words.filter(q=>/^[0-9.,]+$/.test(q.raw));
       for(const item of labels){
         if(found[item.key])continue;
         const label=item.word, candidates=[];
