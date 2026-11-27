@@ -16,8 +16,8 @@
   function price(s){
     let v=String(s||'').replace(/\s/g,'').replace(/[^0-9.,]/g,'');
     if(v.includes(',')&&v.includes('.'))v=v.lastIndexOf(',')>v.lastIndexOf('.')?v.replace(/\./g,'').replace(',','.'):v.replace(/,/g,'');
-    else if(v.includes(',')){const n=v.length-v.lastIndexOf(',')-1;v=n<=2?v.replace(',','.'):v.replace(/,/g,'');}
-    else if(v.includes('.')){const n=v.length-v.lastIndexOf('.')-1;if(n===3)v=v.replace(/\./g,'');}
+    else if(v.includes(','))v=v.includes(',,')?v.replace(/,/g,''):v.replace(',','.');
+    else if((v.match(/\./g)||[]).length>1){const last=v.lastIndexOf('.');v=v.slice(0,last).replace(/\./g,'')+v.slice(last);}
     const n=Number(v);return Number.isFinite(n)&&n>0?String(n):'';
   }
   function preview(file){
