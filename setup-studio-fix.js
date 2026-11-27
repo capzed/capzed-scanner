@@ -71,8 +71,11 @@
       labelRows[key]={y:label.y,x0:t.x0,x1:label.x1};
       if(found[key])continue;
       const candidates=tokens.map(w=>({w,d:Math.min(Math.abs(w.x0-label.x1),Math.abs(label.x0-w.x1))}))
-        .filter(o=>!used.has(o.w.j)&&o.w.j!==t.j&&o.w.j!==label.j&&/^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-label.y)<tol&&o.d<Math.max(260,label.h*22))
-        .sort((x,y)=>Math.abs(x.w.y-label.y)-Math.abs(y.w.y-label.y)||x.d-y.d||y.w.confidence-x.w.confidence);
+        .filter(o=>!used.has(o.w.j)&&o.w.j!==t.j&&o.w.j!==label.j&&/^\d[\d.,]*$/.test(o.w.text)&&Math.abs(o.w.y-label.y)<tol)
+        // TP/SL labels and their price-axis values can be far apart horizontally.
+        // Match the same visual row first; when several numbers share that row,
+        // prefer the rightmost number (normally the chart's printed price scale).
+        .sort((x,y)=>Math.abs(x.w.y-label.y)-Math.abs(y.w.y-label.y)||y.w.x1-x.w.x1||y.w.confidence-x.w.confidence);
       if(candidates.length){const c=candidates[0],v=price(c.w.text);if(v){found[key]=v;used.add(c.w.j);}}
     }
     return Object.assign(found,{_labelRows:labelRows});
