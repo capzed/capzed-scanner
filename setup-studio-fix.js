@@ -318,6 +318,73 @@
     }
     return found;
   }
+  // Independent fallback: read prices to the right of yellow TP markers without
+  // requiring OCR to recognize the literal TP1/TP2 text. The chart's vertical
+  // price order determines target order: LONG targets run bottom-to-top;
+  // SHORT targets run top-to-bottom. No values are synthesized.
+  async function scanYellowTargetRows(worker,source,side){
+    if(side!=='LONG'&&side!=='SHORT')return [];
+    const w=source.naturalWidth||source.width,h=source.naturalHeight||source.height;
+    const base=document.createElement('canvas');base.width=w;base.height=h;
+    const ctx=base.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0,w,h);
+    const p=ctx.getImageData(0,0,w,h).data,active=[];
+    const xStart=Math.floor(w*.48),xEnd=Math.floor(w*.995);
+    for(let y=0;y<h;y++){
+      let hits=0,xMax=-1;
+      for(let x=xStart;x<xEnd;x+=2){
+        const i=(y*w+x)*4,r=p[i]/255,g=p[i+1]/255,b=p[i+2]/255;
+        const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+        let hue=0;
+        if(d){if(mx===r)hue=60*(((g-b)/d)%6);else if(mx===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
+        if(hue<0)hue+=360;
+        const sat=mx===0?0:d/mx;
+        if(hue>=25&&hue<=88&&sat>.18&&mx>.28){hits++;xMax=x;}
+      }
+      if(hits>=2)active.push({y,xMax});
+    }
+    if(!active.length)return [];
+    const clusters=[];
+    for(const row of active){
+      const last=clusters[clusters.length-1];
+      if(last&&row.y-last.end<=Math.max(4,Math.round(h*.004))){
+        last.end=row.y;last.center=(last.start+last.end)/2;last.xMax=Math.max(last.xMax,row.xMax);
+      }else clusters.push({start:row.y,end:row.y,center:row.y,xMax:row.xMax});
+    }
+    const candidates=[];
+    for(const cluster of clusters){
+      const x0=Math.min(w-1,Math.max(0,Math.floor(cluster.xMax+2)));
+      if(w-x0<Math.max(24,w*.025))continue;
+      const band=Math.max(32,Math.round(h*.035));
+      const y0=Math.max(0,Math.round(cluster.center-band/2)),y1=Math.min(h,y0+band);
+      const crop=document.createElement('canvas');crop.width=(w-x0)*5;crop.height=Math.max(1,(y1-y0)*5);
+      const cc=crop.getContext('2d');cc.imageSmoothingEnabled=false;
+      cc.drawImage(base,x0,y0,w-x0,y1-y0,0,0,crop.width,crop.height);
+      let result;
+      try{
+        if(worker.setParameters)await worker.setParameters({
+          tessedit_pageseg_mode:'7',
+          tessedit_char_whitelist:'0123456789.,'
+        });
+        result=await worker.recognize(crop);
+      }catch(_){continue;}
+      finally{
+        if(worker.setParameters)try{await worker.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});}catch(_){}
+      }
+      const words=(result.data.words||[]).filter(q=>q&&q.bbox&&String(q.text||'').trim()&&
+        /^[0-9.,]+$/.test(String(q.text).trim())&&(q.confidence===undefined||q.confidence>=20));
+      const vals=words.map(q=>{
+        const raw=String(q.text).trim(),v=price(raw),digits=(v.match(/\d/g)||[]).length;
+        return {value:v,raw,digits,conf:Number(q.confidence)||0};
+      }).filter(q=>q.value&&(q.digits>=4||(/[.,]/.test(q.raw)&&q.digits>=2)));
+      vals.sort((a,b)=>b.conf-a.conf||b.digits-a.digits);
+      if(vals.length)candidates.push({y:cluster.center,value:vals[0].value,confidence:vals[0].conf});
+    }
+    candidates.sort((a,b)=>a.y-b.y);
+    const unique=candidates.filter((q,i)=>!i||Math.abs(q.y-candidates[i-1].y)>Math.max(10,h*.012));
+    if(unique.length<2)return [];
+    const ordered=side==='LONG'?unique.slice().sort((a,b)=>b.y-a.y):unique;
+    return ordered.slice(0,5).map(q=>q.value);
+  }
   async function analyse(){
     if(!image||busy)return;
     busy=true;
@@ -344,6 +411,19 @@
             else if(!values[k]&&colourValues[k])values[k]=colourValues[k];
           }
           values._labelRows={...(values._labelRows||{}),...(colourValues._labelRows||{})};
+        }
+        // Independent geometric fallback: yellow target markers are detected by colour;
+        // their adjacent prices are OCR-read from the pixels to their right.
+        // This works even when Tesseract cannot read the TP1/TP2 label text.
+        const sideHint=/\\bLONG\\b/.test(String(result.data.text||'').toUpperCase())?'LONG':
+          (/\\bSHORT\\b/.test(String(result.data.text||'').toUpperCase())?'SHORT':'');
+        const existingTpCount=['tp1','tp2','tp3','tp4','tp5'].filter(k=>values[k]).length;
+        if(existingTpCount<2&&sideHint){
+          const positionalTps=await scanYellowTargetRows(worker,image,sideHint);
+          if(positionalTps.length>=2){
+            ['tp1','tp2','tp3','tp4','tp5'].forEach(k=>delete values[k]);
+            positionalTps.forEach((v,i)=>values['tp'+(i+1)]=v);
+          }
         }
         // If full-image OCR misses the labels, run a second pass on the right price-scale region.
         const missing=['tp1','tp2','tp3','tp4','tp5','sl'].some(k=>!values[k]);
