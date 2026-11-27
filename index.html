@@ -334,5 +334,17 @@ document.addEventListener('click',function(event){
  if(target==='history'&&typeof renderHistory==='function')renderHistory();
 });
 </script>
-<script src="./setup-studio-fix.js?v=20261127d"></script>
+<script src="./setup-studio-fix.js?v=20261127e"></script>
+<script>
+/* Hard override: prevent the legacy inline generator from taking the Generate click. */
+(function(){
+ const btn=document.getElementById('generateBtn');
+ if(!btn)return;
+ btn.onclick=function(event){
+  if(event){event.preventDefault();event.stopPropagation();}
+  if(window.TradeDeskSetup&&typeof window.TradeDeskSetup.generate==='function')window.TradeDeskSetup.generate();
+  else document.getElementById('setupError').textContent='Setup Studio controller did not load. Refresh the page and try again.';
+ };
+})();
+</script>
 </body></html>
