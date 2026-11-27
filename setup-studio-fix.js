@@ -275,7 +275,8 @@
         }
         showDirection(side);
         ocrReady=true;
-        const missingFields=[...(!$('symbol').value?['symbol']:[]),...(!$('direction').value?['direction']:[]),...['tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>!$(k).value)];
+        const tpCount=['tp1','tp2','tp3','tp4','tp5'].filter(k=>$(k).value.trim()).length;
+        const missingFields=[...(!$('symbol').value?['symbol']:[]),...(!$('direction').value?['direction']:[]),...(tpCount<2?['at least 2 TP']:[]),...(!$('sl').value?['SL']:[])];
         const detected=['symbol','direction','tp1','tp2','tp3','tp4','tp5','sl'].filter(k=>$(k).value).map(k=>k.toUpperCase()+': '+$(k).value);
         const notice=$('autoLevels');
         if(notice)notice.textContent=(detected.length?'Detected automatically — '+detected.join(' · '):'No reliable trade levels detected.')+(missingFields.length?'\nStill missing: '+missingFields.join(', ').toUpperCase()+'. The app will not invent missing values.':'');
@@ -325,7 +326,8 @@
       const e=Number($('entry').value),s=Number($('sl').value);
       if(e>0&&s>0&&e!==s)showDirection(s<e?'LONG':'SHORT');
     }
-    if(['symbol','direction','tp1','tp2','tp3','tp4','tp5','sl'].some(k=>!$(k).value.trim()))return;
+    const tpCount=['tp1','tp2','tp3','tp4','tp5'].filter(k=>$(k).value.trim()).length;
+    if(!$('symbol').value.trim()||!$('direction').value||tpCount<2||!$('sl').value.trim())return;
     generate();
   }
   // Public bridge used by the page after this controller loads; replaces the legacy generator.
