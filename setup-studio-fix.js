@@ -128,7 +128,10 @@
     try{if(typeof window.parseOcrWords==='function')wordValues=window.parseOcrWords(data.words,prepared.width)||{};}catch(_){}
     const fallback=fallbackWords(data.words);
     const labelRows=fallback._labelRows||{};delete fallback._labelRows;
-    Object.assign(values,wordValues,fallback);
+    // Keep line-level labelled readings first; use word geometry only to fill
+    // missing fields. Targeted colour-row OCR may override these later.
+    for(const [key,value] of Object.entries(wordValues))if(!values[key]&&value)values[key]=value;
+    for(const [key,value] of Object.entries(fallback))if(!values[key]&&value)values[key]=value;
     values._labelRows=labelRows;
     const symbol=upper.match(/\b([A-Z0-9]{2,15})\s*(?:[\/_-]\s*)?USDT(?:\s*\.?\s*P)?\b/)||
       upper.match(/\b(BTC|ETH|XLM|XRP|SOL|ADA|BNB|DOGE|LTC|BCH|SUI|AVAX|LINK|DOT|TRX)\b/);
