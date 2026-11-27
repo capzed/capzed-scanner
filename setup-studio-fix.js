@@ -260,7 +260,12 @@
           const colourValues=extract(colourResult.data.text,colourResult.data,mask);
           const targetedValues=await scanColourRows(worker,image,kind);
           const keys=kind==='yellow'?['tp1','tp2','tp3','tp4','tp5']:['sl'];
-          for(const k of keys)if(!values[k])values[k]=targetedValues[k]||colourValues[k]||'';
+          for(const k of keys){
+            // Label-row OCR is more specific than full-page OCR. Always prefer it
+            // when it successfully reads a value; a broad OCR guess must not block it.
+            if(targetedValues[k])values[k]=targetedValues[k];
+            else if(!values[k]&&colourValues[k])values[k]=colourValues[k];
+          }
           values._labelRows={...(values._labelRows||{}),...(colourValues._labelRows||{})};
         }
         // If full-image OCR misses the labels, run a second pass on the right price-scale region.
