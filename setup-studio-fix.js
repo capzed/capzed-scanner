@@ -415,8 +415,12 @@
         // Independent geometric fallback: yellow target markers are detected by colour;
         // their adjacent prices are OCR-read from the pixels to their right.
         // This works even when Tesseract cannot read the TP1/TP2 label text.
-        const sideHint=/\\bLONG\\b/.test(String(result.data.text||'').toUpperCase())?'LONG':
-          (/\\bSHORT\\b/.test(String(result.data.text||'').toUpperCase())?'SHORT':'');
+        const directionText=String(result.data.text||'').toUpperCase();
+        let sideHint=directionText.includes('LONG')?'LONG':(directionText.includes('SHORT')?'SHORT':'');
+        if(!sideHint){
+          const entryHint=Number($('entry').value),slHint=Number(values.sl||$('sl').value);
+          if(entryHint>0&&slHint>0&&entryHint!==slHint)sideHint=slHint<entryHint?'LONG':'SHORT';
+        }
         const existingTpCount=['tp1','tp2','tp3','tp4','tp5'].filter(k=>values[k]).length;
         if(existingTpCount<2&&sideHint){
           const positionalTps=await scanYellowTargetRows(worker,image,sideHint);
