@@ -146,7 +146,7 @@
       const d=max-min,sat=max===0?0:d/max;
       const coloured=kind==='yellow'?(lum>.28&&r>g*.82&&g>b*1.12&&sat>.16):(lum>.22&&r>g*1.2&&r>b*1.08&&sat>.18);
       // Keep both the coloured tag and neutral bright price digits on the same row.
-      const textPixel=keepRows[y]&&(lum>.34||lum<.20)&&!(sat>.38&&lum<.34);
+      const textPixel=keepRows[y]&&lum>.34&&!(sat>.42&&lum<.62);
       const keep=coloured||textPixel;
       const v=keep?0:255;p[i]=p[i+1]=p[i+2]=v;p[i+3]=255;
     }
