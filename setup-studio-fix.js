@@ -271,7 +271,7 @@
         // TPI -> TP1, and TP S -> TP5. Keep the accepted range strictly 1–5.
         const normalized=raw.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/Z/g,'2').replace(/S/g,'5');
         let key=(normalized.match(/^TP([1-5])$/)||[])[1];
-        key=key?'tp'+key:(/^(SL|5L|S1|STOPLOSS|STOP)$/.test(normalized)?'sl':null);
+        key=key?'tp'+key:(/^(SL|5L|S1|STOPLOSS|STOP)$/.test(raw)?'sl':null);
         const skip=new Set([i]);
         if(!key&&(raw==='TP'||normalized==='TP')&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5){
           key='tp'+words[i+1].text;skip.add(i+1);
