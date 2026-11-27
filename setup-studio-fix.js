@@ -186,11 +186,12 @@
   // a full-width horizontal strip so the adjacent white price is retained.
   async function scanColourRows(worker,source,kind){
     const w=source.naturalWidth||source.width,h=source.naturalHeight||source.height;
-    const ctx=document.createElement('canvas').getContext('2d');
     const base=document.createElement('canvas');base.width=w;base.height=h;
     const bctx=base.getContext('2d',{willReadFrequently:true});bctx.drawImage(source,0,0,w,h);
     const pixels=bctx.getImageData(0,0,w,h).data,rowsFound=[];
-    const xStart=Math.floor(w*.55);
+    // Find coloured annotation rows on the right half, where TradingView-style
+    // level labels and their prices are normally printed.
+    const xStart=Math.floor(w*.48);
     for(let y=0;y<h;y++){
       let count=0;
       for(let x=xStart;x<w;x+=2){
@@ -199,7 +200,7 @@
         let hue=0;if(d){if(max===r)hue=60*(((g-b)/d)%6);else if(max===g)hue=60*((b-r)/d+2);else hue=60*((r-g)/d+4);}
         if(hue<0)hue+=360;
         const sat=max===0?0:d/max;
-        const match=kind==='yellow'?(hue>=28&&hue<=82&&sat>.18&&max>.3):((hue<=20||hue>=340)&&sat>.2&&max>.25);
+        const match=kind==='yellow'?(hue>=25&&hue<=88&&sat>.14&&max>.28):((hue<=24||hue>=336)&&sat>.18&&max>.22);
         if(match&&++count>=2)break;
       }
       if(count>=2)rowsFound.push(y);
@@ -208,35 +209,70 @@
     const clusters=[];
     for(const y of rowsFound){
       const last=clusters[clusters.length-1];
-      if(last&&y-last.end<=Math.max(5,Math.round(h*.004))){last.end=y;last.center=(last.start+last.end)/2;}
+      if(last&&y-last.end<=Math.max(6,Math.round(h*.006))){last.end=y;last.center=(last.start+last.end)/2;}
       else clusters.push({start:y,end:y,center:y});
     }
     const found={};
     for(const cluster of clusters){
-      const band=Math.max(38,Math.round(h*.045));
+      // Wider vertical band protects glyphs whose coloured outline/line is
+      // slightly above or below the actual text baseline.
+      const band=Math.max(54,Math.round(h*.075));
       const y0=Math.max(0,Math.round(cluster.center-band/2)),y1=Math.min(h,y0+band);
-      const crop=document.createElement('canvas');
-      crop.width=Math.round(w*.45*3);crop.height=Math.max(1,(y1-y0)*3);
+      // Include more of the chart's right side: some layouts put TP/SL tags
+      // just left of the price scale rather than at the extreme edge.
+      const sx=Math.floor(w*.38),sw=w-sx;
+      const crop=document.createElement('canvas');crop.width=sw*4;crop.height=Math.max(1,(y1-y0)*4);
       const cc=crop.getContext('2d');cc.imageSmoothingEnabled=false;
-      cc.drawImage(base,Math.floor(w*.55),y0,Math.ceil(w*.45),y1-y0,0,0,crop.width,crop.height);
-      const result=await worker.recognize(crop);
-      const words=(result.data.words||[]).filter(q=>q&&q.bbox&&String(q.text||'').trim());
+      cc.drawImage(base,sx,y0,sw,y1-y0,0,0,crop.width,crop.height);
+      let result;
+      try{
+        if(worker.setParameters)await worker.setParameters({
+          tessedit_pageseg_mode:'11',
+          tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,'
+        });
+        result=await worker.recognize(crop);
+      }finally{
+        if(worker.setParameters)try{await worker.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});}catch(_){}
+      }
+      const words=(result.data.words||[]).filter(q=>q&&q.bbox&&String(q.text||'').trim())
+        .map(q=>({raw:String(q.text).trim(),text:String(q.text).toUpperCase().replace(/[^A-Z0-9]/g,''),x0:q.bbox.x0,x1:q.bbox.x1,y:(q.bbox.y0+q.bbox.y1)/2,h:Math.max(1,q.bbox.y1-q.bbox.y0),conf:Number(q.confidence)||0}))
+        .sort((a,b)=>a.y-b.y||a.x0-b.x0);
       const labels=[];
       for(let i=0;i<words.length;i++){
-        const raw=String(words[i].text).toUpperCase().replace(/[^A-Z0-9]/g,'');
+        const raw=words[i].text;
         let key=(raw.match(/^TP([1-5])$/)||[])[1];
-        key=key?'tp'+key:(/^(SL|5L|STOPLOSS|STOP)$/.test(raw)?'sl':null);
-        if(!key&&raw==='TP'&&words[i+1]&&/^[1-5]$/.test(String(words[i+1].text).trim()))key='tp'+String(words[i+1].text).trim();
+        key=key?'tp'+key:(/^(SL|5L|S1|STOPLOSS|STOP)$/.test(raw)?'sl':null);
+        if(!key&&raw==='TP'&&words[i+1]&&/^[1-5]$/.test(words[i+1].text)&&Math.abs(words[i+1].y-words[i].y)<Math.max(words[i].h,words[i+1].h)*1.5)key='tp'+words[i+1].text;
         if(key&&(kind==='yellow'?key.startsWith('tp'):key==='sl'))labels.push({key,word:words[i]});
       }
-      const numbers=words.filter(q=>/^\d[\d.,]*$/.test(String(q.text||'').trim()));
+      const numeric=words.filter(q=>/^[0-9.,]+$/.test(q.raw)&&/[0-9]/.test(q.raw));
       for(const item of labels){
-        if(found[item.key]||!numbers.length)continue;
-        const ly=(item.word.bbox.y0+item.word.bbox.y1)/2,lx=(item.word.bbox.x0+item.word.bbox.x1)/2;
-        const candidates=numbers.map(q=>({q,dy:Math.abs((q.bbox.y0+q.bbox.y1)/2-ly),dx:Math.abs((q.bbox.x0+q.bbox.x1)/2-lx)}))
-          .filter(v=>v.dy<Math.max(7,(item.word.bbox.y1-item.word.bbox.y0)*.85)&&v.dx<crop.width*.28&&(Number(v.q.confidence)||0)>=25)
-          .sort((a,b)=>a.dy-b.dy||a.dx-b.dx||((b.q.confidence||0)-(a.q.confidence||0)));
-        if(candidates.length){const value=price(candidates[0].q.text);if(value)found[item.key]=value;}
+        if(found[item.key])continue;
+        const label=item.word, candidates=[];
+        // Build numbers from adjacent OCR fragments on the same baseline.
+        // This handles "0" + "." + "12825" and similar split decimals.
+        for(let i=0;i<numeric.length;i++){
+          const first=numeric[i];
+          const parts=[first];let last=first;
+          for(let j=i+1;j<numeric.length;j++){
+            const next=numeric[j],dy=Math.abs(next.y-last.y),dx=next.x0-last.x1;
+            if(dy>Math.max(10,last.h*.8)||dx< -3||dx>Math.max(18,last.h*1.8))break;
+            if(next.x0<label.x0-5&&first.x0>=label.x1)break;
+            parts.push(next);last=next;
+          }
+          const joined=parts.map(p=>p.raw.replace(/[^0-9.,]/g,'')).join('');
+          if(!/[0-9]/.test(joined))continue;
+          const cy=parts.reduce((a,p)=>a+p.y,0)/parts.length;
+          const x0=parts[0].x0,x1=parts[parts.length-1].x1;
+          const dy=Math.abs(cy-label.y);
+          const dx=Math.min(Math.abs(x0-label.x1),Math.abs(label.x0-x1));
+          const val=price(joined);
+          if(val&&dy<Math.max(20,label.h*1.65)&&dx<crop.width*.42){
+            candidates.push({val,dy,dx,conf:Math.min(...parts.map(p=>p.conf)),parts:parts.length});
+          }
+        }
+        candidates.sort((a,b)=>a.dy-b.dy||a.dx-b.dx||b.conf-a.conf||b.parts-a.parts);
+        if(candidates.length)found[item.key]=candidates[0].val;
       }
     }
     return found;
