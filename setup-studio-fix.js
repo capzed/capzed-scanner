@@ -64,8 +64,12 @@
     })).sort((a,b)=>a.y-b.y||a.x0-b.x0);
     const used=new Set();
     for(let i=0;i<tokens.length;i++){
-      const t=tokens[i];let m=t.text.match(/^(?:TP|T[PPI])([1-5])$/),key=m?'tp'+m[1]:/^(?:SL|STOP|STOPLOSS|STOPL)$/.test(t.text)?'sl':null,end=i;
-      if(!key&&/^(?:TP|T[PPI])$/.test(t.text)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-t.y)<Math.max(t.h,tokens[i+1].h)*1.8){key='tp'+tokens[i+1].text;end=i+1;}
+      const t=tokens[i];
+      const compact=t.text.replace(/0/g,'O').replace(/[|!]/g,'I');
+      let m=compact.match(/^(?:TP|T[PPI])([1-5])$/);
+      let key=m?'tp'+m[1]:(/^(?:SL|5L|S1|STOP|STOPLOSS|STOPL)$/.test(compact)?'sl':null),end=i;
+      if(!key&&/^(?:TP|T[PPI])$/.test(compact)&&tokens[i+1]&&/^[1-5]$/.test(tokens[i+1].text)&&Math.abs(tokens[i+1].y-t.y)<Math.max(t.h,tokens[i+1].h)*1.8){key='tp'+tokens[i+1].text;end=i+1;}
+      if(!key&&/^(?:TPS|TPSS|TP5S)$/.test(compact))key='tp5';
       if(!key)continue;
       const label=tokens[end],tol=Math.max(18,label.h*2.2);
       labelRows[key]={y:label.y,x0:t.x0,x1:label.x1};
@@ -77,6 +81,15 @@
         // prefer the rightmost number (normally the chart's printed price scale).
         .sort((x,y)=>Math.abs(x.w.y-label.y)-Math.abs(y.w.y-label.y)||y.w.x1-x.w.x1||y.w.confidence-x.w.confidence);
       if(candidates.length){const c=candidates[0],v=price(c.w.text);if(v){found[key]=v;used.add(c.w.j);}}
+    }
+    // Recover tickers split into adjacent OCR words, e.g. BTC + USDT.
+    for(let i=0;i<tokens.length;i++){
+      const a=tokens[i],b=tokens[i+1];
+      if(b&&Math.abs(a.y-b.y)<Math.max(a.h,b.h)*1.5&&/^[A-Z0-9]{2,10}$/.test(a.text)&&/^USDT(?:P)?$/.test(b.text)){
+        found.symbol=a.text+'USDT';break;
+      }
+      const one=a.text.match(/^([A-Z0-9]{2,15})USDT(?:P)?$/);
+      if(one){found.symbol=one[1]+'USDT';break;}
     }
     return Object.assign(found,{_labelRows:labelRows});
   }
