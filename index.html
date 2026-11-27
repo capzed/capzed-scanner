@@ -20,7 +20,7 @@ main{max-width:1180px;margin:26px auto;padding:0 16px 80px}.hero{display:flex;ju
 @media(max-width:440px){main{margin-top:18px}.panel{padding:14px}.metrics{gap:6px}.metric{padding:9px}.metric b{font-size:17px}nav button{font-size:11px;padding:8px 6px}}
 </style></head>
 <body>
-<header><div class="brand"><div class="logo">T</div><div>TRADEDESK<small>LEVELS & SETUP ASSISTANT</small></div></div><nav><button class="active" data-tab="scanner">Levels Scanner</button><button type="button" data-tab="setup" onclick="window.__tdOpenSetup && window.__tdOpenSetup(event)">Setup Studio</button><button data-tab="history">History</button></nav></header>
+<header><div class="brand"><div class="logo">T</div><div>TRADEDESK<small>LEVELS & SETUP ASSISTANT</small></div></div><nav><button class="active" data-tab="scanner">Levels Scanner</button><button type="button" data-tab="setup">Setup Studio</button><button data-tab="history">History</button></nav></header>
 <main>
 <section id="scanner" class="section active">
 <div class="hero"><div><div class="eyebrow">Market intelligence workspace</div><h1>Trading Levels Scanner</h1><div class="sub">Score your supplied price levels against live Binance USDT-M Futures market data and rank the strongest candidates for the next 30 minutes.</div></div><span class="status">● PUBLIC MARKET DATA · NO API KEY</span></div>
@@ -321,29 +321,32 @@ $('copyBtn').onclick=()=>{const t=$('signalText').textContent;if(t&&t!=='Your ex
 $('downloadTextBtn').onclick=()=>{const t=$('signalText').textContent;if(!t||t==='Your exact trade setup will appear here.')return;download(new Blob([t],{type:'text/plain'}),(val('symbol')||'trade')+'_setup.txt')};
 $('downloadImageBtn').onclick=()=>{if(!lastCanvas)return;lastCanvas.toBlob(b=>download(b,(val('symbol')||'trade')+'_setup.png'))};
 function download(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1500)}
-if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js?v=20261127b').catch(()=>{}));
+// Service-worker registration disabled to prevent stale app versions.
 </script>
 <script>
-// Independent tab navigation fallback: keeps sections switchable even if an optional app module fails.
-document.addEventListener('click',function(event){
- const button=event.target.closest('nav button[data-tab]');
- if(!button)return;
- const target=button.getAttribute('data-tab');
- document.querySelectorAll('nav button[data-tab]').forEach(function(item){item.classList.toggle('active',item===button)});
- document.querySelectorAll('.section').forEach(function(section){section.classList.toggle('active',section.id===target)});
- if(target==='history'&&typeof renderHistory==='function')renderHistory();
-});
-</script>
-<script>
-/* Direct Setup Studio navigation fallback. */
-window.__tdOpenSetup=function(event){
- if(event){event.preventDefault();event.stopPropagation();}
- document.querySelectorAll('nav button[data-tab]').forEach(function(b){b.classList.toggle('active',b.dataset.tab==='setup')});
- document.querySelectorAll('main > section.section').forEach(function(s){s.classList.toggle('active',s.id==='setup')});
- var pane=document.getElementById('setup');
- if(pane){pane.style.display='block';pane.classList.add('active');}
-};
-</script>
+/* Single capture-phase tab controller; overrides legacy handlers. */
+(function(){
+ function openTab(target){
+  var pane=document.getElementById(target); if(!pane)return;
+  document.querySelectorAll('nav button[data-tab]').forEach(function(btn){btn.classList.toggle('active',btn.getAttribute('data-tab')===target)});
+  document.querySelectorAll('main .section').forEach(function(section){
+   var active=section.id===target;
+   section.classList.toggle('active',active);
+   section.style.display=active?'block':'none';
+  });
+  if(target==='history'&&typeof window.renderHistory==='function')window.renderHistory();
+ }
+ document.addEventListener('click',function(event){
+  var btn=event.target.closest&&event.target.closest('nav button[data-tab]');
+  if(!btn)return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  openTab(btn.getAttribute('data-tab'));
+ },true);
+ window.__tdOpenTab=openTab;
+ if('serviceWorker' in navigator)navigator.serviceWorker.getRegistrations().then(function(regs){regs.forEach(function(reg){reg.unregister();});}).catch(function(){});
+ if('caches' in window)caches.keys().then(function(keys){keys.filter(function(k){return k.indexOf('tradedesk-')===0;}).forEach(function(k){caches.delete(k);});}).catch(function(){});
+})();
+
 <script src="./setup-studio-fix.js?v=20261127h"></script>
 <script>
 /* Hard override: prevent the legacy inline generator from taking the Generate click. */
